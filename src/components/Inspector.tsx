@@ -15,6 +15,17 @@ const FONTS = [
 const typeIcon = (t: string) =>
   t === 'text' ? I.text : t === 'image' ? I.image : t === 'ellipse' ? I.circle : t === 'line' ? I.line : I.square;
 
+const ARRANGE: { mode: 'align-l' | 'align-c' | 'align-r' | 'align-t' | 'align-m' | 'align-b' | 'dist-h' | 'dist-v'; icon: string; tip: string }[] = [
+  { mode: 'align-l', icon: I.alignL, tip: 'Align left edges' },
+  { mode: 'align-c', icon: I.alignC, tip: 'Align horizontal centres' },
+  { mode: 'align-r', icon: I.alignR, tip: 'Align right edges' },
+  { mode: 'align-t', icon: I.alignT, tip: 'Align top edges' },
+  { mode: 'align-m', icon: I.alignM, tip: 'Align vertical centres' },
+  { mode: 'align-b', icon: I.alignB, tip: 'Align bottom edges' },
+  { mode: 'dist-h', icon: I.distH, tip: 'Distribute horizontally' },
+  { mode: 'dist-v', icon: I.distV, tip: 'Distribute vertically' },
+];
+
 export default function Inspector({ open = false }: { open?: boolean }) {
   const design = useStore((s) => s.design);
   const selection = useStore((s) => s.selection);
@@ -23,6 +34,7 @@ export default function Inspector({ open = false }: { open?: boolean }) {
   const remove = useStore((s) => s.removeObjects);
   const dup = useStore((s) => s.duplicate);
   const reorder = useStore((s) => s.reorder);
+  const arrange = useStore((s) => s.arrange);
   const net = useStore((s) => s.net);
 
   const o = design.objects.find((x) => x.id === selection[0]) ?? null;
@@ -30,11 +42,39 @@ export default function Inspector({ open = false }: { open?: boolean }) {
 
   return (
     <div className={`panel right${open ? ' open' : ''}`}>
-      <Group title="Layers" right={<span style={{ color: 'var(--txt-3)', fontWeight: 600 }}>{design.objects.length}</span>}>
+      <Group title="Layers" right={
+        <span style={{ color: 'var(--txt-3)', fontWeight: 600 }}>
+          {design.objects.length}
+          {list.length > 0 && (
+            <button className="link-mini" style={{ marginLeft: 8 }}
+              onClick={() => select(selection.length ? [] : list.map((y) => y.id))}>
+              {selection.length ? 'Clear' : 'Select all'}
+            </button>
+          )}
+        </span>
+      }>
         {list.length === 0 && <div className="empty">No artwork elements yet.<br />Add text, shapes or upload a logo from the Design tab.</div>}
+        {list.length > 0 && <p className="phint" style={{ margin: '0 0 6px' }}>Click to select · ⌘/Ctrl adds · Shift picks a run</p>}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {list.map((x) => (
-            <div key={x.id} className={`layer ${selection.includes(x.id) ? 'on' : ''}`} onClick={() => select([x.id])}>
+          {list.map((x, i) => (
+            <div
+              key={x.id}
+              className={`layer ${selection.includes(x.id) ? 'on' : ''}`}
+              onClick={(e) => {
+                if (e.shiftKey && selection.length) {
+                  const marked = list.map((y, j) => selection.includes(y.id) ? j : -1).filter((j) => j >= 0);
+                  const lo = Math.min(i, ...marked);
+                  const hi = Math.max(i, ...marked);
+                  select(list.slice(lo, hi + 1).map((y) => y.id));
+                } else if (e.metaKey || e.ctrlKey) {
+                  select(selection.includes(x.id)
+                    ? selection.filter((id) => id !== x.id)
+                    : [...selection, x.id]);
+                } else {
+                  select([x.id]);
+                }
+              }}
+            >
               <Icon d={typeIcon(x.type)} size={13} />
               <span className="lname">{x.type === 'text' ? (x.text.split('\n')[0] || 'Text') : x.name}</span>
               <button className="mini" title={x.hidden ? 'Show' : 'Hide'}
@@ -49,6 +89,20 @@ export default function Inspector({ open = false }: { open?: boolean }) {
           ))}
         </div>
       </Group>
+
+      {selection.length > 1 && (
+        <Group title={`Arrange · ${selection.length} selected`}>
+          <div className="arr-grid">
+            {ARRANGE.map((a) => (
+              <button key={a.mode} className="arr-btn" title={a.tip}
+                onClick={() => arrange(selection, a.mode)}>
+                <Icon d={a.icon} size={13} />
+              </button>
+            ))}
+          </div>
+          <p className="phint">Aligns to the selection bounding box. Distribute spaces objects evenly — ⌘Z undoes.</p>
+        </Group>
+      )}
 
       {o && (
         <>

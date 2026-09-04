@@ -174,6 +174,13 @@ export function TemplateBrowser({ onClose, onLoad, initialSource = 'built' }: {
 
   const say = (m: string) => { setNote(m); setTimeout(() => setNote(''), 2600); };
 
+  /** Load a random built-in template — respects the current search + category. */
+  const surprise = () => {
+    const pool = (list.length ? list : searched.length ? searched : TEMPLATES) as Template[];
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    if (pick) onLoad(applyTemplate(pick), pick.name);
+  };
+
   const doImport = (f: File) => {
     const r = new FileReader();
     r.onload = () => {
@@ -234,7 +241,12 @@ export function TemplateBrowser({ onClose, onLoad, initialSource = 'built' }: {
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) doImport(f); e.target.value = ''; }} />
             </>
           ) : (
-            <span className="cats-note">Structure, colour and copy all stay editable.</span>
+            <>
+              <span className="cats-note">Structure, colour and copy all stay editable.</span>
+              <button className="ebtn" onClick={surprise} title="Load a random template">
+                <Icon d={I.shuffle} size={13} /> Surprise me
+              </button>
+            </>
           )}
         </div>
 
