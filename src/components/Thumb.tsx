@@ -138,21 +138,40 @@ export function BoxThumb({ design, w = 260, h = 170, bg = '#eef1f6' }: {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     let dead = false;
-    const net = buildNet(design.boxType, design.params);
-    preloadAll(design).then(() => {
-      if (dead || !ref.current) return;
-      const k = 4;
-      const art = renderTexture(design, net, k, 2400);
-      const kk = art.width / net.bounds.w;
-      const c = ref.current;
-      const cw = c.clientWidth || w;
-      const dpr = Math.min(devicePixelRatio, 2);
-      c.width = cw * dpr; c.height = h * dpr;
-      const ctx = c.getContext('2d')!;
-      ctx.scale(dpr, dpr);
-      drawPseudo3D(ctx, art, net, cw, h, bg, kk);
-    });
-    return () => { dead = true; };
+    let observer: IntersectionObserver | null = null;
+
+    const draw = () => {
+      const net = buildNet(design.boxType, design.params);
+      preloadAll(design).then(() => {
+        if (dead || !ref.current) return;
+        const k = 4;
+        const art = renderTexture(design, net, k, 2400);
+        const kk = art.width / net.bounds.w;
+        const c = ref.current;
+        const cw = c.clientWidth || w;
+        const dpr = Math.min(devicePixelRatio, 2);
+        c.width = cw * dpr; c.height = h * dpr;
+        const ctx = c.getContext('2d')!;
+        ctx.scale(dpr, dpr);
+        drawPseudo3D(ctx, art, net, cw, h, bg, kk);
+      });
+    };
+
+    // A hundred cards can otherwise allocate a hundred full-size art canvases
+    // at once. Render only cards near the viewport; the coloured canvas keeps
+    // the grid stable while a user scrolls or filters the library.
+    const canvas = ref.current;
+    if (!canvas || typeof IntersectionObserver === 'undefined') draw();
+    else {
+      observer = new IntersectionObserver(([entry]) => {
+        if (!entry.isIntersecting) return;
+        observer?.disconnect();
+        draw();
+      }, { rootMargin: '320px 0px' });
+      observer.observe(canvas);
+    }
+
+    return () => { dead = true; observer?.disconnect(); };
   }, [design, w, h, bg]);
-  return <canvas ref={ref} style={{ width: '100%', height: h, display: 'block' }} />;
+  return <canvas ref={ref} style={{ width: '100%', height: h, display: 'block', background: bg }} />;
 }

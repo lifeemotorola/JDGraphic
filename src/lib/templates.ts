@@ -42,6 +42,440 @@ const T = (patch: Partial<DesignObject>) => newObject('text', patch);
 const Rct = (patch: Partial<DesignObject>) => newObject('rect', patch);
 const El = (patch: Partial<DesignObject>) => newObject('ellipse', patch);
 
+type TemplateArtwork = { fills: Record<string, string>; objects: DesignObject[] };
+type CatalogPalette = [paper: string, ink: string, accent: string, soft: string];
+
+/**
+ * Compact recipe used by the expanded library. Bespoke templates remain free
+ * to draw anything they like; catalog recipes provide several strong,
+ * structure-aware systems without repeating hundreds of lines of panel
+ * plumbing. Every object is still a normal editable DesignObject.
+ */
+interface CatalogSpec {
+  id: string;
+  name: string;
+  category: string;
+  blurb: string;
+  boxType: BoxTypeId;
+  dims: [number, number, number];
+  materialId: string;
+  palette: CatalogPalette;
+  brand: string;
+  product: string;
+  detail: string;
+  badge: string;
+  message: string;
+  variant: number;
+}
+
+const existingFills = (net: Net, fills: Record<string, string>) =>
+  Object.fromEntries(Object.entries(fills).filter(([id]) => !!net.byId[id]));
+
+const catalogMark = (brand: string) => brand
+  .split(/\s+/)
+  .map((word) => word.replace(/[^A-Z0-9]/gi, '').charAt(0))
+  .join('')
+  .slice(0, 2) || brand.charAt(0);
+
+/** Retail-carton and sleeve artwork family. */
+function catalogCarton(net: Net, s: CatalogSpec): TemplateArtwork {
+  const [paper, ink, accent, soft] = s.palette;
+  const mark = catalogMark(s.brand);
+  const v = s.variant % 4;
+  const objects: DesignObject[] = [];
+
+  if (v === 0) {
+    objects.push(
+      El({ ...on(net, 'front', 0.58, 0.06, 0.34, 0.24), fill: accent, opacity: 0.92, name: 'Brand orbit' }),
+      El({ ...on(net, 'front', 0.67, 0.11, 0.16, 0.12), fill: paper, opacity: 0.78, name: 'Orbit core' }),
+    );
+  } else if (v === 1) {
+    objects.push(
+      Rct({ ...on(net, 'front', 0.055, 0.045, 0.89, 0.91), fill: 'transparent', stroke: ink, strokeW: 0.45, opacity: 0.5, name: 'Keyline frame' }),
+      Rct({ ...on(net, 'front', 0.08, 0.08, 0.18, 0.12), fill: accent, radius: 1.5, name: 'Index block' }),
+      T({ ...on(net, 'front', 0.08, 0.105, 0.18, 0.06), text: mark, fill: paper, size: fit(mark, pw(net, 'front', 0.14), 0.8, 6), weight: 800, tracking: 0.8 }),
+    );
+  } else if (v === 2) {
+    objects.push(
+      Rct({ ...on(net, 'front', 0, 0, 0.12, 1), fill: accent, name: 'Colour rail' }),
+      T({ ...on(net, 'front', 0.65, 0.045, 0.27, 0.16), text: mark, fill: accent, size: fit(mark, pw(net, 'front', 0.2), 1.5, 15), weight: 800, tracking: 1.5, align: 'right' }),
+    );
+  } else {
+    objects.push(
+      Rct({ ...on(net, 'front', 0.08, 0.08, 0.84, 0.2), fill: ink, radius: 2, name: 'Masthead block' }),
+      T({ ...on(net, 'front', 0.12, 0.135, 0.76, 0.08), text: s.brand, fill: paper, size: fit(s.brand, pw(net, 'front', 0.7), 2, 7), weight: 800, tracking: 2 }),
+    );
+  }
+
+  if (v !== 3) objects.push(
+    T({ ...on(net, 'front', 0.08, 0.1, 0.84, 0.07), text: s.brand, fill: ink, size: fit(s.brand, pw(net, 'front', 0.7), 2, 7), weight: 800, tracking: 2, align: v === 2 ? 'left' : 'center' }),
+  );
+  objects.push(
+    T({ ...on(net, 'front', 0.08, 0.34, 0.84, 0.16), text: s.product, fill: ink, size: fit(s.product, pw(net, 'front', 0.84), 1.2, 18), weight: 800, tracking: 1.2, lineHeight: 1.15 }),
+    newObject('line', { ...on(net, 'front', 0.26, 0.54, 0.48, 0.004), h: 0.5, fill: accent }),
+    T({ ...on(net, 'front', 0.1, 0.59, 0.8, 0.1), text: s.detail, fill: ink, opacity: 0.72, size: fit(s.detail, pw(net, 'front', 0.8), 0.35, 5.2), weight: 500, tracking: 0.35, lineHeight: 1.4 }),
+    Rct({ ...on(net, 'front', 0.28, 0.74, 0.44, 0.1), fill: accent, radius: 5, name: 'Product badge' }),
+    T({ ...on(net, 'front', 0.28, 0.762, 0.44, 0.055), text: s.badge, fill: paper, size: fit(s.badge, pw(net, 'front', 0.4), 0.8, 4.6), weight: 800, tracking: 0.8 }),
+    T({ ...on(net, 'front', 0.08, 0.9, 0.84, 0.04), text: s.message, fill: ink, opacity: 0.56, size: fit(s.message, pw(net, 'front', 0.84), 0.8, 3.4), weight: 600, tracking: 0.8 }),
+    T({ ...on(net, 'back', 0.1, 0.1, 0.8, 0.07), text: s.brand, fill: ink, size: fit(s.brand, pw(net, 'back', 0.7), 1.4, 6), weight: 800, tracking: 1.4, align: 'left' }),
+    T({ ...on(net, 'back', 0.1, 0.27, 0.8, 0.28), text: `${s.detail}\n\n${s.message}`, fill: ink, opacity: 0.78, size: fit(s.detail, pw(net, 'back', 0.76), 0.25, 4.4), weight: 400, align: 'left', lineHeight: 1.6 }),
+    Rct({ ...on(net, 'back', 0.1, 0.76, 0.46, 0.1), fill: '#ffffff', radius: 0.8, name: 'Barcode plate' }),
+    T({ ...on(net, 'side-r', 0.1, 0.43, 0.8, 0.1), text: s.brand, fill: paper, size: fit(s.brand, pw(net, 'side-r', 0.8), 1.2, 6), weight: 800, tracking: 1.2 }),
+    T({ ...on(net, 'side-l', 0.1, 0.43, 0.8, 0.1), text: s.badge, fill: soft, size: fit(s.badge, pw(net, 'side-l', 0.8), 0.8, 5), weight: 700, tracking: 0.8 }),
+  );
+
+  for (const id of ['lid-top', 'lid-topf']) {
+    if (net.byId[id]) objects.push(T({
+      ...on(net, id, 0.1, 0.35, 0.8, 0.2), text: s.brand, fill: paper,
+      size: fit(s.brand, pw(net, id, 0.8), 1.5, 8), weight: 800, tracking: 1.5,
+    }));
+  }
+
+  return {
+    fills: existingFills(net, {
+      front: paper, back: soft, 'side-r': ink, 'side-l': ink,
+      'lid-top': accent, 'lid-topf': accent, 'lid-bot': ink, 'lid-botf': ink,
+    }),
+    objects,
+  };
+}
+
+/** Shipping-case artwork family. */
+function catalogCase(net: Net, s: CatalogSpec): TemplateArtwork {
+  const [paper, ink, accent, soft] = s.palette;
+  const mark = catalogMark(s.brand);
+  const objects: DesignObject[] = [
+    Rct({ ...on(net, 'front', 0.055, 0.06, 0.89, 0.86), fill: 'transparent', stroke: ink, strokeW: 0.9, opacity: 0.32, name: 'Case frame' }),
+    El({ ...on(net, 'front', s.variant % 2 ? 0.67 : 0.06, 0.08, 0.24, 0.3), fill: accent, opacity: 0.92, name: 'Case mark' }),
+    T({ ...on(net, 'front', s.variant % 2 ? 0.69 : 0.08, 0.155, 0.2, 0.1), text: mark, fill: paper, size: fit(mark, pw(net, 'front', 0.16), 1, 13), weight: 800, tracking: 1 }),
+    T({ ...on(net, 'front', 0.07, 0.42, 0.86, 0.06), text: s.brand, fill: ink, size: fit(s.brand, pw(net, 'front', 0.6), 2.4, 9), weight: 700, tracking: 2.4, align: 'left' }),
+    T({ ...on(net, 'front', 0.07, 0.5, 0.86, 0.14), text: s.product, fill: ink, size: fit(s.product, pw(net, 'front', 0.86), 1.6, 24), weight: 800, tracking: 1.6, align: 'left' }),
+    T({ ...on(net, 'front', 0.07, 0.66, 0.86, 0.07), text: s.detail, fill: ink, opacity: 0.68, size: fit(s.detail, pw(net, 'front', 0.86), 0.6, 6), weight: 500, tracking: 0.6, align: 'left' }),
+    Rct({ ...on(net, 'front', 0.07, 0.79, 0.34, 0.09), fill: accent, radius: 2 }),
+    T({ ...on(net, 'front', 0.07, 0.812, 0.34, 0.05), text: s.badge, fill: paper, size: fit(s.badge, pw(net, 'front', 0.3), 1, 5), weight: 800, tracking: 1 }),
+    T({ ...on(net, 'back', 0.08, 0.12, 0.84, 0.25), text: `${s.brand}\n\n${s.detail}`, fill: ink, size: fit(s.detail, pw(net, 'back', 0.78), 0.4, 7), weight: 500, align: 'left', lineHeight: 1.55 }),
+    T({ ...on(net, 'back', 0.08, 0.55, 0.84, 0.08), text: s.message, fill: accent, size: fit(s.message, pw(net, 'back', 0.84), 1.4, 7), weight: 800, tracking: 1.4, align: 'left' }),
+    Rct({ ...on(net, 'back', 0.08, 0.75, 0.42, 0.11), fill: '#ffffff', radius: 1, name: 'Shipping label area' }),
+    T({ ...on(net, 'side-r', 0.08, 0.42, 0.84, 0.12), text: s.brand, fill: paper, size: fit(s.brand, pw(net, 'side-r', 0.84), 2, 12), weight: 800, tracking: 2 }),
+    T({ ...on(net, 'side-l', 0.08, 0.42, 0.84, 0.12), text: s.message, fill: soft, size: fit(s.message, pw(net, 'side-l', 0.84), 1.2, 7), weight: 700, tracking: 1.2 }),
+    T({ ...on(net, 'bt', 0.08, 0.28, 0.84, 0.28), text: s.brand, fill: ink, size: fit(s.brand, pw(net, 'bt', 0.84), 2, 14), weight: 800, tracking: 2 }),
+    T({ ...on(net, 'ft', 0.08, 0.28, 0.84, 0.28), text: s.badge, fill: ink, size: fit(s.badge, pw(net, 'ft', 0.84), 1.4, 11), weight: 800, tracking: 1.4 }),
+  ];
+  return {
+    fills: existingFills(net, {
+      front: paper, back: soft, 'side-r': ink, 'side-l': ink,
+      ft: accent, bt: accent, fb: soft, bb: soft,
+    }),
+    objects,
+  };
+}
+
+/** Roll-end mailer artwork family, including an inside-unboxing message. */
+function catalogMailer(net: Net, s: CatalogSpec): TemplateArtwork {
+  const [paper, ink, accent, soft] = s.palette;
+  const mark = catalogMark(s.brand);
+  const objects: DesignObject[] = [];
+  if (s.variant % 3 === 0) objects.push(
+    El({ ...on(net, 'lid', 0.63, 0.08, 0.28, 0.38), fill: accent, name: 'Mailer roundel' }),
+    T({ ...on(net, 'lid', 0.69, 0.18, 0.16, 0.12), text: mark, fill: paper, size: fit(mark, pw(net, 'lid', 0.14), 1, 12), weight: 800, tracking: 1 }),
+  );
+  else if (s.variant % 3 === 1) objects.push(
+    Rct({ ...on(net, 'lid', 0.05, 0.06, 0.9, 0.88), fill: 'transparent', stroke: ink, strokeW: 0.75, opacity: 0.4, name: 'Mailer frame' }),
+    Rct({ ...on(net, 'lid', 0.08, 0.1, 0.24, 0.16), fill: accent, radius: 2, name: 'Mailer index' }),
+  );
+  else objects.push(
+    Rct({ ...on(net, 'lid', 0, 0, 0.18, 1), fill: accent, name: 'Mailer colour rail' }),
+    T({ ...on(net, 'lid', 0.07, 0.42, 0.12, 0.12), text: mark, fill: paper, size: fit(mark, pw(net, 'lid', 0.1), 0.7, 10), weight: 800, tracking: 0.7 }),
+  );
+
+  objects.push(
+    T({ ...on(net, 'lid', 0.08, 0.28, 0.84, 0.07), text: s.brand, fill: ink, size: fit(s.brand, pw(net, 'lid', 0.7), 3, 10), weight: 800, tracking: 3, align: 'left' }),
+    T({ ...on(net, 'lid', 0.08, 0.39, 0.84, 0.16), text: s.product, fill: ink, size: fit(s.product, pw(net, 'lid', 0.84), 1.8, 26), weight: 800, tracking: 1.8, align: 'left' }),
+    newObject('line', { ...on(net, 'lid', 0.08, 0.59, 0.55, 0.004), h: 0.8, fill: accent }),
+    T({ ...on(net, 'lid', 0.08, 0.64, 0.84, 0.07), text: s.detail, fill: ink, opacity: 0.68, size: fit(s.detail, pw(net, 'lid', 0.84), 0.7, 6), weight: 500, tracking: 0.7, align: 'left' }),
+    Rct({ ...on(net, 'lid', 0.08, 0.79, 0.3, 0.09), fill: ink, radius: 2 }),
+    T({ ...on(net, 'lid', 0.08, 0.812, 0.3, 0.05), text: s.badge, fill: paper, size: fit(s.badge, pw(net, 'lid', 0.27), 1, 4.8), weight: 800, tracking: 1 }),
+    T({ ...on(net, 'base', 0.08, 0.36, 0.84, 0.18), text: s.message, fill: accent, size: fit(s.message, pw(net, 'base', 0.84), 2.2, 18), weight: 800, tracking: 2.2, lineHeight: 1.35, name: 'Inside print' }),
+    T({ ...on(net, 'base', 0.08, 0.61, 0.84, 0.07), text: s.detail, fill: soft, size: fit(s.detail, pw(net, 'base', 0.84), 0.8, 5.5), weight: 500, tracking: 0.8 }),
+    T({ ...on(net, 'front', 0.06, 0.25, 0.88, 0.42), text: `${s.brand} · ${s.badge}`, fill: paper, size: fit(`${s.brand} · ${s.badge}`, pw(net, 'front', 0.88), 1.3, 7), weight: 800, tracking: 1.3 }),
+    T({ ...on(net, 'back', 0.06, 0.25, 0.88, 0.42), text: s.message, fill: ink, size: fit(s.message, pw(net, 'back', 0.88), 1.4, 6), weight: 700, tracking: 1.4 }),
+    T({ ...on(net, 'side-r', 0.08, 0.4, 0.84, 0.14), text: s.brand, fill: paper, size: fit(s.brand, pw(net, 'side-r', 0.84), 1.6, 8), weight: 800, tracking: 1.6 }),
+  );
+  return {
+    fills: existingFills(net, {
+      lid: paper, base: ink, front: accent, back: soft,
+      'side-l': ink, 'side-r': ink, lip: accent,
+    }),
+    objects,
+  };
+}
+
+/** Open presentation-tray artwork family. */
+function catalogTray(net: Net, s: CatalogSpec): TemplateArtwork {
+  const [paper, ink, accent, soft] = s.palette;
+  const mark = catalogMark(s.brand);
+  const objects: DesignObject[] = [
+    Rct({ ...on(net, 'base', 0.055, 0.07, 0.89, 0.86), fill: 'transparent', stroke: ink, strokeW: 0.55, opacity: 0.42, name: 'Presentation frame' }),
+  ];
+  if (s.variant % 3 === 0) objects.push(
+    El({ ...on(net, 'base', 0.37, 0.1, 0.26, 0.3), fill: accent, name: 'Tray medallion' }),
+    T({ ...on(net, 'base', 0.42, 0.18, 0.16, 0.1), text: mark, fill: paper, size: fit(mark, pw(net, 'base', 0.14), 1, 12), weight: 800, tracking: 1 }),
+  );
+  else if (s.variant % 3 === 1) objects.push(
+    Rct({ ...on(net, 'base', 0.08, 0.11, 0.84, 0.2), fill: accent, radius: 2, name: 'Tray banner' }),
+    T({ ...on(net, 'base', 0.12, 0.165, 0.76, 0.08), text: s.brand, fill: paper, size: fit(s.brand, pw(net, 'base', 0.7), 2.4, 9), weight: 800, tracking: 2.4 }),
+  );
+  else objects.push(
+    El({ ...on(net, 'base', 0.08, 0.1, 0.22, 0.3), fill: accent, opacity: 0.88, name: 'Tray orbit' }),
+    El({ ...on(net, 'base', 0.19, 0.16, 0.18, 0.24), fill: ink, opacity: 0.9, name: 'Tray orbit' }),
+  );
+
+  if (s.variant % 3 !== 1) objects.push(T({
+    ...on(net, 'base', 0.08, 0.43, 0.84, 0.07), text: s.brand, fill: ink,
+    size: fit(s.brand, pw(net, 'base', 0.7), 2.6, 9), weight: 800, tracking: 2.6,
+  }));
+  objects.push(
+    T({ ...on(net, 'base', 0.08, 0.53, 0.84, 0.14), text: s.product, fill: ink, size: fit(s.product, pw(net, 'base', 0.84), 1.4, 18), weight: 800, tracking: 1.4 }),
+    T({ ...on(net, 'base', 0.1, 0.69, 0.8, 0.07), text: s.detail, fill: ink, opacity: 0.65, size: fit(s.detail, pw(net, 'base', 0.8), 0.5, 5), weight: 500, tracking: 0.5 }),
+    newObject('line', { ...on(net, 'base', 0.36, 0.79, 0.28, 0.004), h: 0.5, fill: accent }),
+    T({ ...on(net, 'base', 0.1, 0.83, 0.8, 0.05), text: `${s.badge} · ${s.message}`, fill: ink, opacity: 0.58, size: fit(`${s.badge} · ${s.message}`, pw(net, 'base', 0.8), 0.8, 3.7), weight: 600, tracking: 0.8 }),
+    T({ ...on(net, 'front', 0.08, 0.3, 0.84, 0.24), text: s.brand, fill: paper, size: fit(s.brand, pw(net, 'front', 0.84), 2, 8), weight: 800, tracking: 2 }),
+    T({ ...on(net, 'back', 0.08, 0.3, 0.84, 0.24), text: s.message, fill: soft, size: fit(s.message, pw(net, 'back', 0.84), 1.2, 5.5), weight: 700, tracking: 1.2 }),
+    T({ ...on(net, 'side-r', 0.08, 0.34, 0.84, 0.18), text: s.badge, fill: ink, size: fit(s.badge, pw(net, 'side-r', 0.84), 1, 5), weight: 700, tracking: 1 }),
+  );
+  return {
+    fills: existingFills(net, { base: paper, front: ink, back: ink, 'side-l': soft, 'side-r': soft }),
+    objects,
+  };
+}
+
+const catalogTemplate = (s: CatalogSpec): Template => ({
+  id: s.id,
+  name: s.name,
+  category: s.category,
+  blurb: s.blurb,
+  boxType: s.boxType,
+  dims: s.dims,
+  materialId: s.materialId,
+  board: s.palette[0],
+  inner: s.palette[3],
+  swatch: s.palette.slice(0, 3),
+  build: (net) => s.boxType === 'rsc'
+    ? catalogCase(net, s)
+    : s.boxType === 'mailer'
+      ? catalogMailer(net, s)
+      : s.boxType === 'tray'
+        ? catalogTray(net, s)
+        : catalogCarton(net, s),
+});
+
+const C = (
+  id: string, name: string, category: string, blurb: string,
+  boxType: BoxTypeId, dims: [number, number, number], materialId: string,
+  palette: CatalogPalette, brand: string, product: string, detail: string,
+  badge: string, message: string, variant: number,
+): CatalogSpec => ({
+  id, name, category, blurb, boxType, dims, materialId, palette,
+  brand, product, detail, badge, message, variant,
+});
+
+/** Sixty additional concepts: concise data, structure-aware editable artwork. */
+const CATALOG_TEMPLATES: Template[] = [
+  /* Straight tuck end ------------------------------------------------- */
+  C('verdant-barrier', 'Verdant Barrier Cream', 'Beauty', 'Botanical face-cream carton with a fresh apothecary palette.',
+    'ste', [72, 72, 96], 'sbs', ['#eef3e8', '#21382d', '#d9865b', '#dde7d7'],
+    'VERDANT', 'BARRIER CREAM', 'Ceramide complex · colloidal oat', '50 ML', 'CALM BY NATURE', 0),
+  C('atlas-merino', 'Atlas Merino Socks', 'Fashion', 'Earthy retail carton for a pair of technical merino socks.',
+    'ste', [115, 45, 180], 'kraft', ['#cfb58e', '#24382e', '#d55d3d', '#eadfc9'],
+    'ATLAS', 'MERINO CREW', 'Temperature regulating · trail ready', 'PAIR / M', 'GO FURTHER', 1),
+  C('hatch-hot-sauce', 'Hatch Hot Sauce', 'Food & Bev', 'Tall pantry carton with a sun-hot chilli colour system.',
+    'ste', [58, 58, 180], 'sbs', ['#fff0cf', '#4a1d16', '#e74724', '#f3d8af'],
+    'HATCH', 'RED CHILLI', 'Smoked pepper sauce · medium heat', '150 ML', 'FIRE, BALANCED', 2),
+  C('sprout-baby-lotion', 'Sprout Baby Lotion', 'Baby', 'Gentle nursery carton with friendly colour and clear claims.',
+    'ste', [72, 52, 165], 'sbs', ['#f6f0df', '#355c55', '#ef9f82', '#e6dfca'],
+    'SPROUT', 'BABY LOTION', 'Oat milk · calendula · fragrance free', '200 ML', 'SOFT FROM DAY ONE', 3),
+  C('prism-card-deck', 'Prism Playing Cards', 'Games', 'Crisp tuck box for a colourful modern playing-card deck.',
+    'ste', [68, 25, 95], 'sbs', ['#f4f0ff', '#24203f', '#7456e8', '#ddd6f5'],
+    'PRISM', 'PLAYING CARDS', 'Fifty-four linen-finish cards', '54 CARDS', 'DEAL IN COLOUR', 0),
+  C('north-coast-spf', 'North Coast SPF 50', 'Beauty', 'Clean coastal sunscreen carton with high-impact shelf copy.',
+    'ste', [60, 42, 150], 'sbs', ['#e8f5f4', '#164d5a', '#ff7a59', '#d5e9e7'],
+    'NORTH COAST', 'DAILY SPF 50', 'Mineral face fluid · reef conscious', '50 ML', 'EVERYDAY COVER', 1),
+  C('ember-spice-trio', 'Ember Spice Trio', 'Food & Bev', 'Warm kitchen carton for a three-jar chilli and spice set.',
+    'ste', [120, 42, 155], 'kraft', ['#d7bc91', '#382a20', '#b7472d', '#eee0c7'],
+    'EMBER', 'SPICE TRIO', 'Smoked salt · chilli · toasted cumin', '3 × 45 G', 'COOK WITH HEAT', 2),
+  C('pulse-bike-light', 'Pulse Bike Light', 'Sports', 'Technical retail carton for a compact rechargeable bike light.',
+    'ste', [85, 50, 115], 'sbs', ['#e9eff2', '#16262f', '#ffb703', '#d5e0e5'],
+    'PULSE', 'BIKE LIGHT', '600 lumen · USB-C · weather sealed', 'PL-600', 'BE SEEN', 3),
+
+  /* Reverse tuck end -------------------------------------------------- */
+  C('kin-hand-cream', 'Kin Hand Cream', 'Beauty', 'Pocket-sized skincare carton with a calm editorial layout.',
+    'rte', [55, 38, 145], 'sbs', ['#f2e8df', '#4a3340', '#c86872', '#e6d6cc'],
+    'KIN', 'HAND CREAM', 'Shea butter · rosehip · fast absorbing', '75 ML', 'CARE, CLOSE AT HAND', 1),
+  C('paperplane-pencils', 'Paperplane Pencils', 'Stationery', 'Slim graphite-pencil box with a bright classroom stripe.',
+    'rte', [68, 22, 190], 'sbs', ['#fff5ce', '#24344a', '#ef5b4c', '#eee2b8'],
+    'PAPERPLANE', 'GRAPHITE SET', 'Six cedar pencils · HB to 6B', '6 PENCILS', 'MAKE A FIRST MARK', 2),
+  C('cub-club-snacks', 'Cub Club Snacks', 'Kids', 'Playful snack carton for lunchbox-sized fruit bites.',
+    'rte', [120, 42, 165], 'sbs', ['#fff0b8', '#344e41', '#ff6b5f', '#e9dda9'],
+    'CUB CLUB', 'FRUIT BITES', 'Apple · berry · no added sugar', '6 PACKS', 'ROAR INTO SNACKTIME', 0),
+  C('volta-power-bank', 'Volta Power Bank', 'Tech', 'Sharp accessory carton for a pocket USB-C power bank.',
+    'rte', [92, 32, 155], 'sbs', ['#edf0f5', '#151a24', '#5c7cfa', '#d9dee8'],
+    'VOLTA', 'POWER BANK', '10,000 mAh · 30 W fast charge', 'V10 / USB-C', 'POWER, POCKETED', 3),
+  C('cedar-everyday-socks', 'Cedar Everyday Socks', 'Fashion', 'Natural apparel carton for a three-pair essentials pack.',
+    'rte', [110, 38, 175], 'kraft', ['#d2bb98', '#3e4735', '#c65d3b', '#e8dbc4'],
+    'CEDAR', 'EVERYDAY SOCKS', 'Organic cotton · cushioned sole', '3 PAIRS', 'BUILT FOR MONDAY', 0),
+  C('flora-probiotic', 'Flora Daily Probiotic', 'Health', 'Fresh supplement carton with a simple numbered regimen.',
+    'rte', [65, 55, 120], 'sbs', ['#eef5e9', '#284c3b', '#e08954', '#dce8d5'],
+    'FLORA', 'DAILY 12', 'Twelve strains · delayed release', '30 CAPSULES', 'START WITHIN', 1),
+  C('apex-golf-balls', 'Apex Golf Balls', 'Sports', 'Low, wide performance carton for a dozen tour golf balls.',
+    'rte', [135, 45, 48], 'sbs', ['#f4f5f2', '#21302c', '#d8a514', '#dfe4dc'],
+    'APEX', 'TOUR CONTROL', 'Three-piece urethane · low spin', '12 BALLS', 'PLAY THE LINE', 2),
+  C('glow-night-light', 'Glow Baby Night Light', 'Baby', 'Soothing nursery-tech box with a moonlit pastel system.',
+    'rte', [100, 80, 105], 'sbs', ['#eeeafd', '#34335e', '#f6b85a', '#ddd8ef'],
+    'GLOW', 'NIGHT LIGHT', 'Warm dimming · tap control · 12 hour', 'AGES 0+', 'SLEEP SOFTLY', 3),
+
+  /* Seal end --------------------------------------------------------- */
+  C('orchard-oat-bars', 'Orchard Oat Bars', 'Food & Bev', 'Sunny grocery carton for individually wrapped oat bars.',
+    'seal', [165, 55, 205], 'sbs', ['#f7e7ad', '#38553f', '#d95d39', '#ead69a'],
+    'ORCHARD', 'APPLE OAT BARS', 'Whole oats · dried apple · cinnamon', '6 × 40 G', 'GOODNESS, WRAPPED', 0),
+  C('lucid-laundry-tabs', 'Lucid Laundry Tabs', 'Home', 'Clean household carton for low-waste detergent tablets.',
+    'seal', [145, 60, 185], 'sbs', ['#e7f2f2', '#174b55', '#f28f5b', '#d4e6e5'],
+    'LUCID', 'LAUNDRY TABS', 'Plant based · fresh linen · cold wash', '36 WASHES', 'LESS PLASTIC. EASY.', 1),
+  C('flex-protein-bars', 'Flex Protein Bars', 'Sports', 'Bold shelf-ready case for post-training protein bars.',
+    'seal', [180, 58, 155], 'sbs', ['#eceff1', '#1f252b', '#ef534f', '#d9dee1'],
+    'FLEX', 'PROTEIN 20', 'Chocolate sea salt · 20 g protein', '12 BARS', 'RECOVER STRONG', 2),
+  C('metro-pasta', 'Metro Bronze-Cut Pasta', 'Food & Bev', 'Contemporary pantry box for premium bronze-cut pasta.',
+    'seal', [135, 55, 205], 'sbs', ['#f5e7c5', '#253c4a', '#c74b36', '#e9d7ae'],
+    'METRO', 'RIGATONI No. 8', 'Bronze cut · slow dried · durum wheat', '500 G', 'DINNER HAS STRUCTURE', 3),
+  C('sunday-pancake', 'Sunday Pancake Mix', 'Food & Bev', 'Warm breakfast carton with an easy-going weekend voice.',
+    'seal', [155, 52, 205], 'kraft', ['#d9bd91', '#4b3526', '#d8663e', '#eee0c7'],
+    'SUNDAY', 'PANCAKE MIX', 'Buttermilk style · just add water', '750 G', 'MAKE MORNING SLOW', 0),
+  C('neat-dishwasher', 'Neat Dishwasher Tabs', 'Home', 'Minimal cleaning carton with bright water-saving claims.',
+    'seal', [150, 62, 190], 'sbs', ['#edf6f0', '#20564c', '#f0a33a', '#dcebe3'],
+    'NEAT', 'DISH TABS', 'Citrus mineral · phosphate free', '40 CYCLES', 'SMALL TAB. BIG CLEAN.', 1),
+  C('kinder-bites', 'Kinder Teething Bites', 'Baby', 'Soft-toned food carton for baby-friendly teething wafers.',
+    'seal', [130, 46, 165], 'sbs', ['#f7edda', '#52615a', '#e99572', '#eadfca'],
+    'KINDER', 'TEETHING BITES', 'Banana oat · meltable · no added salt', '8 PACKS', 'LITTLE BITES, GENTLY', 2),
+  C('rally-tennis-balls', 'Rally Tennis Balls', 'Sports', 'Tall performance carton for a four-ball tennis multipack.',
+    'seal', [78, 78, 220], 'sbs', ['#eef0dc', '#25352e', '#d5e629', '#dde1ca'],
+    'RALLY', 'COURT BALLS', 'All surface · consistent bounce', '4 BALLS', 'KEEP THE RALLY GOING', 3),
+  C('arcade-snack-mix', 'Arcade Snack Mix', 'Games', 'Neon-inspired sharing carton for game-night snack packs.',
+    'seal', [170, 58, 180], 'sbs', ['#eee9ff', '#282044', '#f05ca8', '#ddd5f4'],
+    'ARCADE', 'POWER MIX', 'Pretzel · corn crunch · cocoa bites', '10 PACKS', 'INSERT SNACK', 0),
+
+  /* Regular slotted carton ------------------------------------------ */
+  C('forge-tool-case', 'Forge Tool Case', 'Hardware', 'Heavy-duty corrugated case for a starter hand-tool set.',
+    'rsc', [360, 260, 210], 'bflute', ['#d0b58e', '#2d302d', '#e55e36', '#e7d7bc'],
+    'FORGE', 'HOME TOOL SET', 'Hammer · drivers · pliers · tape', '42 PIECES', 'LIFT WITH CARE', 0),
+  C('bloom-flower-case', 'Bloom Flower Delivery', 'E-commerce', 'Fresh subscription shipper built around a flower delivery.',
+    'rsc', [300, 250, 180], 'bflute', ['#e9ead8', '#365442', '#e66f72', '#d8ddc5'],
+    'BLOOM', 'FRESH STEMS', 'Seasonal flowers · arranged at home', 'THIS SIDE UP', 'LET THEM BREATHE', 1),
+  C('sonar-speaker-pair', 'Sonar Speaker Pair', 'Tech', 'Protective electronics case with a modern audio identity.',
+    'rsc', [410, 250, 220], 'bflute', ['#e4e8eb', '#17212b', '#3f8cff', '#d1d8dd'],
+    'SONAR', 'STEREO TWO', 'Wireless bookshelf speakers · 120 W', 'PAIR / S2', 'FRAGILE AUDIO', 2),
+  C('peak-camp-kitchen', 'Peak Camp Kitchen', 'Outdoor', 'Rugged gear case for a nesting outdoor cooking kit.',
+    'rsc', [380, 280, 220], 'bflute', ['#cfbd99', '#293b31', '#e0703f', '#e4d7bd'],
+    'PEAK', 'CAMP KITCHEN', 'Two pots · pan · kettle · four settings', 'KIT / 4', 'PACK IN. PACK OUT.', 3),
+  C('playfield-board-game', 'Playfield Board Game', 'Games', 'Square corrugated shipper for a strategy board-game edition.',
+    'rsc', [310, 310, 85], 'eflute', ['#eee9d9', '#25223b', '#e05252', '#ddd6c5'],
+    'PLAYFIELD', 'CITY STATE', 'Strategy game · two to five players', 'AGES 12+', 'YOUR MOVE', 0),
+  C('pantry-produce-box', 'Pantry Produce Box', 'Food & Bev', 'Friendly farm-box case for a weekly produce assortment.',
+    'rsc', [400, 300, 190], 'bflute', ['#d4bf96', '#36523a', '#d7653d', '#e8dcc4'],
+    'PANTRY', 'FARM BOX', 'Seasonal fruit · vegetables · herbs', 'WEEK 32', 'GROWN NEARBY', 1),
+  C('motor-care-kit', 'Motor Care Kit', 'Automotive', 'Workshop-ready corrugated case for car-cleaning essentials.',
+    'rsc', [330, 240, 200], 'bflute', ['#d6dadd', '#20262d', '#f0643b', '#c7cdd1'],
+    'MOTOR', 'DETAIL KIT', 'Wash · wax · glass · wheel care', '8 PIECES', 'GARAGE READY', 2),
+  C('move-home-kit', 'Move Home Starter Kit', 'Home', 'Utility shipper for first-night moving and home essentials.',
+    'rsc', [450, 320, 280], 'bflute', ['#d1b994', '#34413b', '#ec7651', '#e5d7bf'],
+    'MOVE', 'FIRST NIGHT KIT', 'Cleaning · lighting · kitchen basics', 'ROOM 01', 'OPEN THIS ONE FIRST', 3),
+  C('studio-light-case', 'Studio Light Case', 'Tech', 'Graphic shipping case for a compact creator lighting kit.',
+    'rsc', [360, 280, 220], 'bflute', ['#e4e4e1', '#202124', '#f4b942', '#d4d4cf'],
+    'STUDIO', 'KEY LIGHT 60', 'Bi-colour LED · stand · softbox', 'SL-60', 'HANDLE BRIGHT IDEAS', 0),
+
+  /* Roll-end mailer -------------------------------------------------- */
+  C('aura-lingerie-mailer', 'Aura Lingerie Mailer', 'Fashion', 'Soft-touch unboxing mailer for an intimates collection.',
+    'mailer', [280, 210, 55], 'eflute', ['#f2e6e3', '#4c303c', '#c57677', '#e4d4d1'],
+    'AURA', 'EVERYDAY SOFT', 'Thoughtful essentials · responsibly made', 'SET / 02', 'MADE FOR YOUR SHAPE', 0),
+  C('first-day-baby-box', 'First Day Baby Box', 'Baby', 'Keepsake mailer for a curated newborn welcome set.',
+    'mailer', [260, 190, 65], 'eflute', ['#f3eddd', '#46605a', '#e9a36f', '#e4dbc8'],
+    'FIRST DAY', 'HELLO, BABY', 'Blanket · bodysuit · milestone cards', '0–3 MONTHS', 'A SMALL, WARM WELCOME', 1),
+  C('good-post-stationery', 'Good Post Stationery Box', 'Stationery', 'Cheerful letter-writing mailer with an inside-lid prompt.',
+    'mailer', [250, 180, 45], 'eflute', ['#fff0c7', '#29435a', '#ed6452', '#ecdfba'],
+    'GOOD POST', 'LETTER SET', 'Cards · envelopes · stickers · pen', '24 PIECES', 'WRITE TO SOMEONE', 2),
+  C('green-bean-coffee', 'Green Bean Coffee Box', 'Food & Bev', 'Monthly coffee mailer with roast notes under the lid.',
+    'mailer', [270, 200, 75], 'eflute', ['#dfe8d4', '#2e4837', '#dc6b46', '#ccd9c1'],
+    'GREEN BEAN', 'ROASTER DROP', 'Two seasonal coffees · whole bean', '2 × 250 G', 'BREW SOMETHING NEW', 0),
+  C('level-up-game-box', 'Level Up Game Box', 'Games', 'High-energy subscription mailer for tabletop discoveries.',
+    'mailer', [320, 230, 80], 'eflute', ['#ece8ff', '#2b2550', '#7b61ff', '#d9d2f2'],
+    'LEVEL UP', 'GAME NIGHT', 'One new game · snacks · score pad', 'BOX / 08', 'NEXT TURN: YOURS', 1),
+  C('ritual-refill-mailer', 'Ritual Refill Mailer', 'Beauty', 'Low-waste skincare refill box with clear return messaging.',
+    'mailer', [240, 180, 55], 'eflute', ['#e7efe6', '#2d4b3d', '#d9825b', '#d5e1d3'],
+    'RITUAL', 'REFILL ROUTINE', 'Cleanser · moisturiser · return pouch', '90 DAYS', 'REFILL. RETURN. REPEAT.', 2),
+  C('club-run-mailer', 'Club Run Mailer', 'Sports', 'Performance apparel mailer for a quarterly running drop.',
+    'mailer', [330, 240, 90], 'eflute', ['#e9edee', '#1d2930', '#ff5b3e', '#d6dddf'],
+    'CLUB RUN', 'MILES AHEAD', 'Technical tee · socks · recovery band', 'DROP / 03', 'SEE YOU OUT THERE', 0),
+  C('wildflower-seed-box', 'Wildflower Seed Box', 'Home', 'Letterbox-friendly seed collection with planting copy inside.',
+    'mailer', [240, 170, 48], 'kraft', ['#d8c39d', '#39523b', '#d76a4a', '#ebdfc8'],
+    'WILDFLOWER', 'MEADOW KIT', 'Six native seed mixes · planting guide', '20 M²', 'MAKE ROOM FOR WILD', 1),
+
+  /* Sleeves ---------------------------------------------------------- */
+  C('frame-sunglasses', 'Frame Sunglasses Sleeve', 'Fashion', 'Slim premium sleeve for a folding eyewear case.',
+    'sleeve', [175, 55, 72], 'sbs', ['#eee7da', '#222c31', '#d46c4e', '#ddd3c3'],
+    'FRAME', 'SUN / 04', 'Polarised lens · recycled acetate', 'UV 400', 'LOOK AHEAD', 1),
+  C('metric-calipers', 'Metric Calipers Sleeve', 'Hardware', 'Technical measuring-tool sleeve with monospaced details.',
+    'sleeve', [245, 55, 85], 'grey', ['#d5d4ce', '#252a2d', '#e0a62f', '#c4c3bc'],
+    'METRIC', 'DIGITAL CALIPER', '0–150 mm · stainless · IP54', 'MC-150', 'MEASURE TWICE', 2),
+  C('cassette-chocolate', 'Cassette Chocolate Sleeve', 'Food & Bev', 'Playful chocolate-bar wrap inspired by mixtape graphics.',
+    'sleeve', [155, 28, 95], 'sbs', ['#f4dfb9', '#3b2740', '#e84c72', '#e7cca0'],
+    'CASSETTE', 'DARK / SIDE B', '72% cacao · raspberry · sea salt', '80 G', 'PRESS PLAY', 3),
+  C('loam-incense', 'Loam Incense Sleeve', 'Home', 'Tall botanical sleeve for a bundle of natural incense.',
+    'sleeve', [70, 35, 230], 'kraft', ['#d5c09a', '#34463a', '#b9674b', '#e8dbc3'],
+    'LOAM', 'CEDAR SMOKE', 'Twenty hand-rolled incense sticks', '20 STICKS', 'BURN SLOWLY', 0),
+  C('chorus-vinyl', 'Chorus Vinyl Sleeve', 'Media', 'Oversized graphic wrap for a special-edition vinyl record.',
+    'sleeve', [315, 18, 315], 'sbs', ['#ece9e3', '#22223b', '#e05a47', '#d9d4cb'],
+    'CHORUS', 'VOLUME IV', 'Limited pressing · 180 gram vinyl', 'LP / 004', 'PLAY IT LOUD', 1),
+  C('clean-cable-kit', 'Clean Cable Kit Sleeve', 'Tech', 'Orderly accessory wrap for a desktop cable-management set.',
+    'sleeve', [160, 35, 110], 'grey', ['#e4e5e2', '#283238', '#4f8fca', '#d2d5d1'],
+    'CLEAN', 'CABLE KIT', 'Clips · ties · sleeve · labels', '24 PIECES', 'DESK, UNTANGLED', 2),
+  C('still-mind-cards', 'Still Mind Cards', 'Health', 'Calm editorial sleeve for a deck of guided breathing cards.',
+    'sleeve', [105, 28, 145], 'sbs', ['#e8eee8', '#385049', '#d38a62', '#d6e0d7'],
+    'STILL', 'MINDFUL CARDS', 'Fifty prompts for pause and focus', '50 CARDS', 'TAKE ONE MINUTE', 3),
+  C('sparkler-party-kit', 'Sparkler Party Kit', 'Premium', 'Celebratory sleeve for a compact table-party collection.',
+    'sleeve', [210, 45, 140], 'sbs', ['#fff0d6', '#49344d', '#e75c75', '#f0dbc0'],
+    'SPARKLER', 'PARTY KIT', 'Candles · confetti · place cards', 'FOR 8', 'MAKE A LITTLE NOISE', 0),
+  C('court-grip-tape', 'Court Grip Tape', 'Sports', 'Compact athletic sleeve for racket overgrip multipacks.',
+    'sleeve', [120, 45, 120], 'sbs', ['#eff1df', '#24382f', '#d9e52b', '#dde2ce'],
+    'COURT', 'PRO GRIP', 'Dry-touch racket overgrip', '3 WRAPS', 'HOLD THE POINT', 1),
+
+  /* Open trays ------------------------------------------------------- */
+  C('halo-watch-tray', 'Halo Watch Tray', 'Premium', 'Refined presentation tray for a modern wristwatch.',
+    'tray', [140, 110, 35], 'black', ['#e9e4da', '#26272b', '#b48b4f', '#d8d1c5'],
+    'HALO', 'AUTOMATIC 38', 'Sapphire crystal · steel case', 'No. 038', 'TIME, CONSIDERED', 0),
+  C('palette-watercolour', 'Palette Watercolour Tray', 'Stationery', 'Bright artist tray for a compact watercolour set.',
+    'tray', [235, 95, 25], 'sbs', ['#f2eee3', '#293b4a', '#e75b4e', '#ddd7ca'],
+    'PALETTE', 'WATERCOLOUR 18', 'Artist pans · travel brush · mixing lid', '18 COLOURS', 'PAINT ANYWHERE', 1),
+  C('nest-baby-gift', 'Nest Baby Gift Tray', 'Baby', 'Soft presentation tray for a newborn clothing gift set.',
+    'tray', [280, 210, 55], 'eflute', ['#f0eadc', '#496057', '#df9a79', '#dfd6c5'],
+    'NEST', 'NEW ARRIVAL', 'Blanket · hat · bodysuit · keepsake', '0–3 MONTHS', 'WRAPPED IN WARMTH', 2),
+  C('chef-knife-tray', 'Chef Knife Tray', 'Hardware', 'Long protective presentation tray for a kitchen knife.',
+    'tray', [390, 95, 38], 'black', ['#e5e1d8', '#25282a', '#b17d45', '#d2cdc3'],
+    'EDGE', 'CHEF 210', 'Forged steel · walnut handle', '210 MM', 'SHARP BY DESIGN', 0),
+  C('solar-desk-kit', 'Solar Desk Kit', 'Tech', 'Organised tray for a small solar-powered desk setup.',
+    'tray', [260, 180, 48], 'grey', ['#e5e9e2', '#263a38', '#e9a92f', '#d2d8d0'],
+    'SOLAR', 'DESK KIT', 'Panel · task light · USB battery', '18 W', 'WORK IN DAYLIGHT', 1),
+  C('velvet-chocolates', 'Velvet Chocolate Tray', 'Food & Bev', 'Rich confectionery tray for a sixteen-piece assortment.',
+    'tray', [190, 145, 32], 'black', ['#eee3d5', '#3d2730', '#bd6c54', '#ddcfc0'],
+    'VELVET', 'BONBON EDITION', 'Ganache · praline · salted caramel', '16 PIECES', 'TAKE YOUR TIME', 2),
+  C('studio-photo-kit', 'Studio Photo Kit Tray', 'Media', 'Creator-focused tray for a compact mobile photography kit.',
+    'tray', [320, 240, 55], 'eflute', ['#e6e7e8', '#20272d', '#4f83cc', '#d3d6d8'],
+    'STUDIO', 'MOBILE PHOTO KIT', 'Light · tripod · lens · backdrop', 'KIT / 06', 'MAKE THE FRAME', 0),
+  C('bloom-jewelry-tray', 'Bloom Jewelry Tray', 'Premium', 'Floral presentation tray for a delicate jewelry collection.',
+    'tray', [125, 95, 28], 'black', ['#f0e5df', '#4b303c', '#c67b70', '#dfd1cb'],
+    'BLOOM', 'PETAL STUDS', 'Recycled gold vermeil · hand finished', 'PAIR / 02', 'MADE TO KEEP', 1),
+  C('game-night-tokens', 'Game Night Token Tray', 'Games', 'Colourful organiser tray for premium tabletop tokens.',
+    'tray', [220, 160, 35], 'sbs', ['#eee9d8', '#292543', '#e25757', '#ddd6c3'],
+    'GAME NIGHT', 'TOKEN VAULT', 'Wood markers · coins · score cubes', '120 PIECES', 'SET THE TABLE', 2),
+].map(catalogTemplate);
+
 export const TEMPLATES: Template[] = [
   {
     id: 'aurora-skin',
@@ -1040,6 +1474,7 @@ export const TEMPLATES: Template[] = [
       ],
     }),
   },
+  ...CATALOG_TEMPLATES,
 ];
 
 export function applyTemplate(t: Template): Design {
