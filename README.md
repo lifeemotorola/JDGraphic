@@ -11,11 +11,14 @@ the render and the print files can never drift apart.
 
 | | |
 |---|---|
-| **21 templates** | Beauty, food & bev, tech, e-commerce, health, kids, pet, home, media, outdoor and premium starting points, searchable and filterable by category in the studio |
+| **30 templates** | Beauty, food & bev, tech, e-commerce, health, kids, pet, home, media, outdoor, premium and wine & spirits starting points, searchable and filterable by category in the studio |
 | **My templates** | Save any design as your own reusable template — stored in the browser, editable, duplicable, and portable through a `.json` library file |
 | **7 structures** | Straight/Reverse Tuck End, Seal End, Regular Slotted Carton, Roll End Mailer, Sleeve, Open Tray |
 | **Parametric dielines** | Cut / crease / bleed / safe-area generated from L × W × H, caliper and glue-flap width |
 | **Artwork editor** | Text, images, rectangles, ellipses and rules on the flat, with panel snapping, per-panel fills and a layer inspector |
+| **Arrange tools** | Multi-select layers (⌘/Ctrl adds, Shift selects a run, *Select all*), then align left/centre/right, top/middle/bottom, or distribute horizontally/vertically in one undo step |
+| **Session autosave** | The working design is quietly saved after every change and the home page offers *Continue where you left off* — refresh or close a tab and your carton is still there. A *New carton* button in the editor bar starts clean and clears the saved session |
+| **Template picker** | Searchable by category in the studio — plus a *Surprise me* button that drops a random built-in design straight onto the artboard |
 | **Real-time 3D** | Panel-by-panel fold animation (0–100 %), orbit, board substrates, finishes, studio lighting and shadows |
 | **Exports** | Layered dieline SVG, print-ready PDF (bleed + registration marks), vector dieline PDF, 300 dpi flat artwork PNG, transparent 2× render PNG, `.boxcraft.json` project |
 | **Manufacturing spec sheet** | One-page PDF: structure, board, flat sheet size, board area and waste, blank weight, internal volume, bleed/glue, plus dieline and render thumbnails |
@@ -62,7 +65,7 @@ the dieline view and the 3D model sample, using `u = (x - minX)/W`, `v = 1 - (y 
 
 ```
 src/
-  lib/        geometry.ts  store.ts  render2d.ts  exporters.ts  templates.ts  library.ts
+  lib/        geometry.ts  store.ts  render2d.ts  exporters.ts  templates.ts  library.ts  session.ts
   three/      engine.ts            vanilla three.js renderer + fold rig
   components/ Viewer3D  Dieline2D  Panels  Inspector  MiniViewer  Thumb  TemplateBrowser  ui
   pages/      Home.tsx  Editor.tsx

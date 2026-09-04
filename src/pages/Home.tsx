@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BOX_TYPES } from '../lib/geometry';
+import { BOX_TYPES, boxTypeById } from '../lib/geometry';
 import { TEMPLATES, applyTemplate } from '../lib/templates';
 import { useStore } from '../lib/store';
 import { templateDesign, timeAgo, useLibrary } from '../lib/library';
+import { clearSession, readSession } from '../lib/session';
 import { Icon, I } from '../components/ui';
 import { NetThumb, BoxThumb } from '../components/Thumb';
 import MiniViewer from '../components/MiniViewer';
@@ -19,6 +20,9 @@ export default function Home({ nav }: { nav: (p: string) => void }) {
     () => HERO_IDS.map((id) => applyTemplate(TEMPLATES.find((t) => t.id === id)!)),
     [],
   );
+
+  /** A design from a previous session — offer to continue it. */
+  const [session, setSession] = useState(() => readSession());
 
   useEffect(() => {
     const t = setInterval(() => setI((n) => (n + 1) % heroDesigns.length), 7000);
@@ -89,6 +93,37 @@ export default function Home({ nav }: { nav: (p: string) => void }) {
           </div>
         </div>
       </header>
+
+      {/* ---------------- resume last session ---------------- */}
+      {session && (
+        <section className="section" style={{ padding: '28px 0 0' }}>
+          <div className="site-inner">
+            <div className="resume-band">
+              <div className="resume-copy">
+                <div className="kicker"><span className="dot" /> Where you left off</div>
+                <h3 title={session.design.name}>“{session.design.name}”</h3>
+                <p>
+                  {boxTypeById(session.design.boxType).name} ·
+                  {Math.round(session.design.params.L)} × {Math.round(session.design.params.W)} × {Math.round(session.design.params.H)} mm ·
+                  autosaved {timeAgo(session.savedAt)}
+                </p>
+              </div>
+              <div className="resume-actions">
+                <button className="btn btn-primary" onClick={() => {
+                  const s = readSession();
+                  if (s) load(s.design);
+                  nav('/editor');
+                }}>
+                  Continue designing <Icon d={I.arrowR} size={15} />
+                </button>
+                <button className="btn btn-ghost" onClick={() => { clearSession(); setSession(null); }}>
+                  Discard
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ---------------- value ---------------- */}
       <section className="section alt">

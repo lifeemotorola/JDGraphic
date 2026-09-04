@@ -6,6 +6,13 @@ import {
 
 export type ObjType = 'rect' | 'ellipse' | 'text' | 'image' | 'line';
 
+/** Align uses the selection's shared bounding box; distribute spaces the
+ *  selected objects evenly along an axis (edges of the first/last kept). */
+export type ArrangeMode =
+  | 'align-l' | 'align-c' | 'align-r'
+  | 'align-t' | 'align-m' | 'align-b'
+  | 'dist-h' | 'dist-v';
+
 export interface DesignObject {
   id: string;
   name: string;
@@ -116,6 +123,7 @@ interface Store {
   removeObjects: (ids: string[]) => void;
   duplicate: (ids: string[]) => void;
   reorder: (id: string, dir: 1 | -1 | 'front' | 'back') => void;
+  arrange: (ids: string[], mode: ArrangeMode) => void;
   loadDesign: (d: Design) => void;
 }
 
@@ -221,6 +229,46 @@ export const useStore = create<Store>((set, get) => ({
       else if (dir === 'back') d.objects.unshift(o);
       else d.objects.splice(Math.max(0, Math.min(d.objects.length, i + dir)), 0, o);
     });
+  },
+
+  /** Align or distribute selected artwork (single undo entry, locked skipped). */
+  arrange: (ids, mode) => {
+    get().commit((d) => {
+      const os = d.objects.filter((o) => ids.includes(o.id) && !o.locked);
+      if (os.length < 2) return;
+      const min = (k: (o: DesignObject) => number) => Math.min(...os.map(k));
+      const max = (k: (o: DesignObject) => number) => Math.max(...os.map(k));
+      const left = min((o) => o.x);
+      const top = min((o) => o.y);
+      const right = max((o) => o.x + o.w);
+      const bottom = max((o) => o.y + o.h);
+      const midX = (left + right) / 2;
+      const midY = (top + bottom) / 2;
+      switch (mode) {
+        case 'align-l': os.forEach((o) => { o.x = left; }); break;
+        case 'align-c': os.forEach((o) => { o.x = midX - o.w / 2; }); break;
+        case 'align-r': os.forEach((o) => { o.x = right - o.w; }); break;
+        case 'align-t': os.forEach((o) => { o.y = top; }); break;
+        case 'align-m': os.forEach((o) => { o.y = midY - o.h / 2; }); break;
+        case 'align-b': os.forEach((o) => { o.y = bottom - o.h; }); break;
+        case 'dist-h': {
+          const s = [...os].sort((a, b) => a.x - b.x);
+          const span = (s[s.length - 1].x + s[s.length - 1].w) - s[0].x - s.reduce((n, o) => n + o.w, 0);
+          const gap = Math.max(0, span / (s.length - 1));
+          let cx = s[0].x;
+          for (const o of s) { o.x = cx; cx += o.w + gap; }
+          break;
+        }
+        case 'dist-v': {
+          const s = [...os].sort((a, b) => a.y - b.y);
+          const span = (s[s.length - 1].y + s[s.length - 1].h) - s[0].y - s.reduce((n, o) => n + o.h, 0);
+          const gap = Math.max(0, span / (s.length - 1));
+          let cy = s[0].y;
+          for (const o of s) { o.y = cy; cy += o.h + gap; }
+          break;
+        }
+      }
+    }, 'arrange');
   },
   loadDesign: (d) => set((s) => ({
     design: d, past: [...s.past, s.design], future: [],
