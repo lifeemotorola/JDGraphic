@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { BOX_TYPES } from '../lib/geometry';
 import { TEMPLATES, applyTemplate } from '../lib/templates';
 import { useStore } from '../lib/store';
+import { templateDesign, timeAgo, useLibrary } from '../lib/library';
 import { Icon, I } from '../components/ui';
 import { NetThumb, BoxThumb } from '../components/Thumb';
 import MiniViewer from '../components/MiniViewer';
@@ -10,6 +11,7 @@ const HERO_IDS = ['aurora-skin', 'roast-coffee', 'lumen-tech', 'garden-tea'];
 
 export default function Home({ nav }: { nav: (p: string) => void }) {
   const load = useStore((s) => s.loadDesign);
+  const mine = useLibrary((s) => s.items);
   const [i, setI] = useState(0);
   const [fold, setFold] = useState(1);
 
@@ -28,6 +30,12 @@ export default function Home({ nav }: { nav: (p: string) => void }) {
       const t = TEMPLATES.find((x) => x.id === tplId);
       if (t) load(applyTemplate(t));
     }
+    nav('/editor');
+  };
+
+  const openMine = (id: string) => {
+    const t = mine.find((x) => x.id === id);
+    if (t) load(templateDesign(t));
     nav('/editor');
   };
 
@@ -156,6 +164,32 @@ export default function Home({ nav }: { nav: (p: string) => void }) {
             <h2 className="sh">Ship a concept before lunch</h2>
             <p className="sub">{TEMPLATES.length} fully editable starting points — colours, copy and structure all stay live.</p>
           </div>
+          {!!mine.length && (
+            <>
+              <div className="mine-head">
+                <div>
+                  <div className="kicker">Your library</div>
+                  <h3>{mine.length} template{mine.length === 1 ? '' : 's'} saved in this browser</h3>
+                  <p>Your own structures, boards and artwork — reopen one and keep designing.</p>
+                </div>
+                <button className="btn btn-ghost" onClick={() => open()}>
+                  Manage in the studio <Icon d={I.arrowR} size={15} />
+                </button>
+              </div>
+              <div className="mine-strip">
+                {mine.slice(0, 4).map((t) => (
+                  <button className="mine-card" key={t.id} onClick={() => openMine(t.id)}>
+                    <BoxThumb design={t.design} h={140} bg="#eef1f6" />
+                    <div className="mc-b">
+                      <h4>{t.name}</h4>
+                      <p>{t.blurb || `${t.category} · saved ${timeAgo(t.updatedAt)}`}</p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
           <div className="tgrid">
             {TEMPLATES.slice(0, 8).map((t) => {
               const d = applyTemplate(t);

@@ -11,7 +11,8 @@ the render and the print files can never drift apart.
 
 | | |
 |---|---|
-| **21 templates** | Beauty, food & bev, tech, e-commerce, health, kids, pet, home, media, outdoor and premium starting points, filterable by category in the studio |
+| **21 templates** | Beauty, food & bev, tech, e-commerce, health, kids, pet, home, media, outdoor and premium starting points, searchable and filterable by category in the studio |
+| **My templates** | Save any design as your own reusable template — stored in the browser, editable, duplicable, and portable through a `.json` library file |
 | **7 structures** | Straight/Reverse Tuck End, Seal End, Regular Slotted Carton, Roll End Mailer, Sleeve, Open Tray |
 | **Parametric dielines** | Cut / crease / bleed / safe-area generated from L × W × H, caliper and glue-flap width |
 | **Artwork editor** | Text, images, rectangles, ellipses and rules on the flat, with panel snapping, per-panel fills and a layer inspector |
@@ -61,14 +62,40 @@ the dieline view and the 3D model sample, using `u = (x - minX)/W`, `v = 1 - (y 
 
 ```
 src/
-  lib/        geometry.ts  store.ts  render2d.ts  exporters.ts  templates.ts
+  lib/        geometry.ts  store.ts  render2d.ts  exporters.ts  templates.ts  library.ts
   three/      engine.ts            vanilla three.js renderer + fold rig
-  components/ Viewer3D  Dieline2D  Panels  Inspector  MiniViewer  Thumb  ui
+  components/ Viewer3D  Dieline2D  Panels  Inspector  MiniViewer  Thumb  TemplateBrowser  ui
   pages/      Home.tsx  Editor.tsx
 ```
 
 State is a single zustand store with `commit(fn, coalesceKey)` for undo/redo —
-drags coalesce into one history entry.
+drags coalesce into one history entry. The user template library is a second,
+deliberately separate zustand store (`src/lib/library.ts`) so saving a template
+never lands in the design's undo history.
+
+## My templates
+
+A built-in template is *code*: a `build(net)` function that re-lays its artwork
+every time you drag a dimension slider. A user template can't be code, so it
+stores a full `Design` snapshot instead — structure, params, board, panel fills
+and every artwork object — which is exactly what `loadDesign` consumes.
+
+| | |
+|---|---|
+| **Save** | *Save template* in the editor bar (also in Art → My templates and Export → Project). Name, category and description; the dialog previews the snapshot it is about to store |
+| **Browse** | The templates dialog has two sources — **BoxCraft** and **Mine** — plus search and category chips across both |
+| **Manage** | Rename/re-categorise, replace the stored design with what is currently on the artboard, duplicate, download a single template, delete (with confirm) |
+| **Portability** | *Export all* writes a versioned `boxcraft-library.json`; *Import* accepts that file, a single downloaded template, or any plain `.boxcraft.json` project |
+| **Home page** | Saved templates surface as a "Your library" strip above the built-in gallery |
+
+Storage is `localStorage` under `boxcraft.library.v1` (nothing is uploaded, same
+promise the exporters make). Everything read back in — from storage or an
+imported file — goes through `sanitizeDesign`, which clamps dimensions, drops
+unknown structures/materials and re-mints malformed objects, so a corrupt or
+hand-edited file can never take the net builder down. Quota failures are
+reported in the UI instead of silently dropping a save, the footer shows how
+much space the library uses, and a `storage` listener keeps two open studio tabs
+in sync.
 
 ## Troubleshooting
 
@@ -90,6 +117,8 @@ The layers icon in the top bar opens the inspector.
 - No external fonts or assets: system font stacks and a procedural studio
   environment map, so it works offline and inside sandboxed previews.
 - `shot.mjs` is a small Playwright screenshotter used during development.
+- The template library is per-browser: clearing site data removes it, which is
+  why *Export all* exists.
 
 ## Deliberately out of scope
 
