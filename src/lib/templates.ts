@@ -1,0 +1,503 @@
+import { buildNet, boxTypeById, type BoxTypeId, type Net } from './geometry';
+import { newObject, startDesign, type Design, type DesignObject } from './store';
+
+/** place an object on a panel using fractional coords */
+function on(net: Net, panelId: string, rx: number, ry: number, rw: number, rh: number) {
+  const p = net.byId[panelId] ?? net.root;
+  return { x: p.x + p.w * rx, y: p.y + p.h * ry, w: p.w * rw, h: p.h * rh };
+}
+
+export interface Template {
+  id: string;
+  name: string;
+  category: string;
+  blurb: string;
+  boxType: BoxTypeId;
+  dims: [number, number, number];
+  materialId: string;
+  board: string;
+  inner: string;
+  swatch: string[];
+  build: (net: Net) => { fills: Record<string, string>; objects: DesignObject[] };
+}
+
+const SERIF = 'Georgia, "Times New Roman", serif';
+const MONO = '"Courier New", ui-monospace, monospace';
+const HELV = '"Helvetica Neue", Arial, sans-serif';
+
+/**
+ * Largest type size (mm) at which `text` still fits `w` mm.
+ * Templates are parametric too — the same layout has to survive a user
+ * dragging the dimension sliders, so headlines are sized, never hard-coded.
+ */
+function fit(text: string, w: number, tracking = 0, cap = 40, factor = 0.62) {
+  const n = Math.max(1, ...text.split('\n').map((l) => l.length));
+  return Math.max(2, Math.min(cap, (w - tracking * n) / (n * factor)));
+}
+
+/** width in mm of a panel fraction — handy for fit() */
+const pw = (net: Net, id: string, frac = 1) => (net.byId[id]?.w ?? net.root.w) * frac;
+
+const T = (patch: Partial<DesignObject>) => newObject('text', patch);
+const Rct = (patch: Partial<DesignObject>) => newObject('rect', patch);
+const El = (patch: Partial<DesignObject>) => newObject('ellipse', patch);
+
+export const TEMPLATES: Template[] = [
+  {
+    id: 'aurora-skin',
+    name: 'Aurora Skincare',
+    category: 'Beauty',
+    blurb: 'Soft gradient serum carton with foil-style wordmark.',
+    boxType: 'ste', dims: [55, 55, 130], materialId: 'sbs',
+    board: '#f7f4ef', inner: '#efe9dd',
+    swatch: ['#123c46', '#e9d8a6', '#f7f4ef'],
+    build: (net) => ({
+      fills: { front: '#123c46', back: '#123c46', 'side-r': '#0e2f37', 'side-l': '#0e2f37', 'lid-top': '#e9d8a6', 'lid-bot': '#e9d8a6' },
+      objects: [
+        El({ ...on(net, 'front', 0.12, 0.08, 0.76, 0.34), fill: '#1d5b68', opacity: 0.85, name: 'Halo' }),
+        T({ ...on(net, 'front', 0.08, 0.42, 0.84, 0.12), text: 'AURORA', fill: '#e9d8a6', size: 8.5, weight: 800, tracking: 2.4, name: 'Wordmark' }),
+        T({ ...on(net, 'front', 0.08, 0.55, 0.84, 0.08), text: 'HYDRA GLOW SERUM', fill: '#cfe3e6', size: 2.9, weight: 500, tracking: 0.9 }),
+        newObject('line', { ...on(net, 'front', 0.34, 0.66, 0.32, 0.004), h: 0.5, fill: '#e9d8a6' }),
+        T({ ...on(net, 'front', 0.1, 0.78, 0.8, 0.07), text: '30 ml  ·  1.0 fl oz', fill: '#9dbcc2', size: 3, weight: 500, tracking: 1 }),
+        T({ ...on(net, 'back', 0.12, 0.12, 0.76, 0.5), text: 'A weightless daily serum\nwith 5% niacinamide and\nhyaluronic acid.\n\nApply 2–3 drops morning\nand night to clean skin.', fill: '#dbe9ec', size: 3.2, weight: 400, align: 'left', lineHeight: 1.5 }),
+        Rct({ ...on(net, 'back', 0.12, 0.76, 0.34, 0.12), fill: '#ffffff', radius: 1, name: 'Barcode plate' }),
+      ],
+    }),
+  },
+  {
+    id: 'roast-coffee',
+    name: 'Single Origin Roast',
+    category: 'Food & Bev',
+    blurb: 'Kraft coffee carton with bold typographic stack.',
+    boxType: 'seal', dims: [85, 60, 190], materialId: 'kraft',
+    board: '#c8a074', inner: '#bb8f60',
+    swatch: ['#c8a074', '#2b1d16', '#e2452f'],
+    build: (net) => ({
+      fills: { front: '#c8a074', back: '#c8a074', 'side-r': '#bb9066', 'side-l': '#bb9066' },
+      objects: [
+        Rct({ ...on(net, 'front', 0.1, 0.06, 0.8, 0.42), fill: '#2b1d16', radius: 2 }),
+        T({ ...on(net, 'front', 0.12, 0.1, 0.76, 0.1), text: 'EST. 2014', fill: '#c8a074', size: 3, weight: 600, tracking: 3 }),
+        T({ ...on(net, 'front', 0.12, 0.18, 0.76, 0.18), text: 'MERIDIAN', fill: '#f5efe6', size: 11.5, weight: 800, tracking: 1 }),
+        T({ ...on(net, 'front', 0.12, 0.34, 0.76, 0.1), text: 'COFFEE ROASTERS', fill: '#e2452f', size: 3.6, weight: 700, tracking: 1.5 }),
+        T({ ...on(net, 'front', 0.1, 0.54, 0.8, 0.1), text: 'ETHIOPIA · GUJI', fill: '#2b1d16', size: 6.5, weight: 800, tracking: 1 }),
+        T({ ...on(net, 'front', 0.1, 0.63, 0.8, 0.16), text: 'Washed heirloom · Jasmine,\nstone fruit, brown sugar', fill: '#4a3527', size: 3.4, weight: 500, lineHeight: 1.4 }),
+        El({ ...on(net, 'front', 0.38, 0.8, 0.24, 0.1), fill: '#e2452f' }),
+        T({ ...on(net, 'front', 0.38, 0.815, 0.24, 0.07), text: '340g', fill: '#fff', size: 3.6, weight: 700 }),
+      ],
+    }),
+  },
+  {
+    id: 'lumen-tech',
+    name: 'Lumen Earbuds',
+    category: 'Tech',
+    blurb: 'Matte black rigid-look carton with accent gradient.',
+    boxType: 'ste', dims: [95, 45, 110], materialId: 'black',
+    board: '#141416', inner: '#1c1c20',
+    swatch: ['#111113', '#6c5ce7', '#00d2ff'],
+    build: (net) => ({
+      fills: { front: '#111113', back: '#111113', 'side-r': '#0b0b0d', 'side-l': '#0b0b0d', 'lid-top': '#17171b', 'lid-bot': '#17171b' },
+      objects: [
+        El({ ...on(net, 'front', 0.18, 0.14, 0.64, 0.44), fill: '#6c5ce7', opacity: 0.55 }),
+        El({ ...on(net, 'front', 0.3, 0.24, 0.42, 0.3), fill: '#00d2ff', opacity: 0.5 }),
+        T({ ...on(net, 'front', 0.08, 0.66, 0.84, 0.12), text: 'LUMEN', fill: '#ffffff', size: 12, weight: 800, tracking: 6 }),
+        T({ ...on(net, 'front', 0.08, 0.78, 0.84, 0.07), text: 'PRO ANC EARBUDS', fill: '#8e8ea3', size: 3.2, weight: 600, tracking: 3 }),
+        T({ ...on(net, 'side-r', 0.1, 0.06, 0.8, 0.06), text: 'LUMEN', fill: '#fff', size: 3.4, weight: 800, tracking: 2 }),
+      ],
+    }),
+  },
+  {
+    id: 'garden-tea',
+    name: 'Botanic Tea',
+    category: 'Food & Bev',
+    blurb: 'Airy pastel carton for loose-leaf tea.',
+    boxType: 'rte', dims: [75, 75, 100], materialId: 'sbs',
+    board: '#fbf7f0', inner: '#f2ece1',
+    swatch: ['#e8f1e4', '#2f5d3a', '#e7a76c'],
+    build: (net) => ({
+      fills: { front: '#e8f1e4', back: '#e8f1e4', 'side-r': '#dbe9d6', 'side-l': '#dbe9d6', 'lid-top': '#2f5d3a', 'lid-bot': '#2f5d3a' },
+      objects: [
+        El({ ...on(net, 'front', 0.22, 0.1, 0.56, 0.4), fill: '#ffffff', opacity: 0.75 }),
+        T({ ...on(net, 'front', 0.15, 0.2, 0.7, 0.14), text: 'BOTANIC', fill: '#2f5d3a', size: 9, weight: 800, tracking: 2 }),
+        T({ ...on(net, 'front', 0.15, 0.32, 0.7, 0.07), text: 'LOOSE LEAF', fill: '#7a9a80', size: 3.2, weight: 600, tracking: 3 }),
+        newObject('line', { ...on(net, 'front', 0.3, 0.56, 0.4, 0.004), h: 0.6, fill: '#e7a76c' }),
+        T({ ...on(net, 'front', 0.1, 0.62, 0.8, 0.1), text: 'Chamomile\n& Lemon Verbena', fill: '#2f5d3a', size: 4.6, weight: 600, lineHeight: 1.35 }),
+        T({ ...on(net, 'front', 0.1, 0.84, 0.8, 0.06), text: '20 PYRAMID BAGS · 40g', fill: '#7a9a80', size: 2.8, weight: 500, tracking: 1.4 }),
+      ],
+    }),
+  },
+  {
+    id: 'ship-mailer',
+    name: 'Subscription Mailer',
+    category: 'E-commerce',
+    blurb: 'Printed-inside mailer for DTC unboxing moments.',
+    boxType: 'mailer', dims: [240, 180, 70], materialId: 'eflute',
+    board: '#e8e3da', inner: '#e4572e',
+    swatch: ['#1b3a4b', '#e4572e', '#f6f4ef'],
+    build: (net) => ({
+      fills: { base: '#f6f4ef', front: '#1b3a4b', back: '#1b3a4b', 'side-l': '#1b3a4b', 'side-r': '#1b3a4b', lid: '#f6f4ef' },
+      objects: [
+        T({ ...on(net, 'lid', 0.1, 0.34, 0.8, 0.18), text: 'WELL HELLO.', fill: '#1b3a4b', size: 22, weight: 800, tracking: 1 }),
+        T({ ...on(net, 'lid', 0.1, 0.54, 0.8, 0.08), text: 'YOUR MONTHLY DROP HAS LANDED', fill: '#e4572e', size: 6, weight: 700, tracking: 3 }),
+        T({ ...on(net, 'front', 0.06, 0.3, 0.4, 0.4), text: 'CRATE', fill: '#f6f4ef', size: 17, weight: 800, tracking: 4, align: 'left' }),
+      ],
+    }),
+  },
+  {
+    id: 'pharma-rte',
+    name: 'Clinical Pharma',
+    category: 'Health',
+    blurb: 'Regulatory-friendly carton with generous safe areas.',
+    boxType: 'rte', dims: [60, 30, 105], materialId: 'sbs',
+    board: '#ffffff', inner: '#f4f1ea',
+    swatch: ['#ffffff', '#0057b8', '#00a3a1'],
+    build: (net) => ({
+      fills: { front: '#ffffff', back: '#ffffff', 'side-r': '#f2f6fb', 'side-l': '#f2f6fb', 'lid-top': '#0057b8', 'lid-bot': '#0057b8' },
+      objects: [
+        Rct({ ...on(net, 'front', 0, 0, 1, 0.16), fill: '#0057b8' }),
+        T({ ...on(net, 'front', 0.08, 0.04, 0.84, 0.08), text: 'NOVACARE', fill: '#ffffff', size: 5.5, weight: 800, tracking: 2 }),
+        T({ ...on(net, 'front', 0.08, 0.26, 0.84, 0.1), text: 'Cetirizine', fill: '#0b1f33', size: 7.5, weight: 700 }),
+        T({ ...on(net, 'front', 0.08, 0.37, 0.84, 0.07), text: '10 mg film-coated tablets', fill: '#44546a', size: 3.2, weight: 500 }),
+        newObject('line', { ...on(net, 'front', 0.08, 0.5, 0.84, 0.004), h: 0.4, fill: '#c8d4e2' }),
+        T({ ...on(net, 'front', 0.08, 0.56, 0.84, 0.12), text: '30 tablets\nOral use', fill: '#0b1f33', size: 3.6, weight: 600, lineHeight: 1.4 }),
+        Rct({ ...on(net, 'front', 0.08, 0.78, 0.5, 0.14), fill: '#0b1f33', radius: 0.6, opacity: 0.08 }),
+        T({ ...on(net, 'front', 0.08, 0.82, 0.5, 0.06), text: 'EXP 06/2028   LOT 4471B', fill: '#0b1f33', size: 2.6, weight: 500 }),
+      ],
+    }),
+  },
+  {
+    id: 'candy-sleeve',
+    name: 'Confection Sleeve',
+    category: 'Food & Bev',
+    blurb: 'High-contrast sleeve that wraps a tray insert.',
+    boxType: 'sleeve', dims: [110, 40, 70], materialId: 'sbs',
+    board: '#fff8f2', inner: '#f2e9df',
+    swatch: ['#ff3d68', '#ffd166', '#2d2a4a'],
+    build: (net) => ({
+      fills: { front: '#ff3d68', back: '#2d2a4a', 'side-r': '#ffd166', 'side-l': '#ffd166' },
+      objects: [
+        T({ ...on(net, 'front', 0.06, 0.2, 0.88, 0.24), text: 'SUGAR CLUB', fill: '#fff8f2', size: 13, weight: 800, tracking: 1 }),
+        T({ ...on(net, 'front', 0.06, 0.5, 0.88, 0.1), text: 'SALTED CARAMEL BONBONS', fill: '#ffd166', size: 4.2, weight: 700, tracking: 2 }),
+        El({ ...on(net, 'front', 0.4, 0.66, 0.2, 0.22), fill: '#2d2a4a' }),
+        T({ ...on(net, 'front', 0.4, 0.73, 0.2, 0.08), text: '12', fill: '#ffd166', size: 7, weight: 800 }),
+        T({ ...on(net, 'back', 0.1, 0.4, 0.8, 0.2), text: 'Made in small batches.\nKeep cool and dry.', fill: '#fff8f2', size: 3.6, weight: 500, lineHeight: 1.5 }),
+      ],
+    }),
+  },
+  {
+    id: 'gift-tray',
+    name: 'Luxe Gift Tray',
+    category: 'Premium',
+    blurb: 'Deep tray base ready for a printed sleeve.',
+    boxType: 'tray', dims: [180, 120, 50], materialId: 'black',
+    board: '#17171a', inner: '#232327',
+    swatch: ['#17171a', '#c9a227', '#f5f5f7'],
+    build: (net) => ({
+      fills: { base: '#17171a', front: '#111114', back: '#111114', 'side-l': '#111114', 'side-r': '#111114' },
+      objects: [
+        T({ ...on(net, 'base', 0.2, 0.42, 0.6, 0.16), text: 'MAISON', fill: '#c9a227', size: 16, weight: 300, tracking: 12 }),
+        newObject('line', { ...on(net, 'base', 0.34, 0.62, 0.32, 0.004), h: 0.5, fill: '#c9a227' }),
+      ],
+    }),
+  },
+  /* ------------------------------------------------------------------ *
+   * Second wave — one per structure family, sized with fit() so the
+   * layouts survive dimension changes.
+   * ------------------------------------------------------------------ */
+  {
+    id: 'noir-parfum',
+    name: 'Noir Parfum',
+    category: 'Beauty',
+    blurb: 'Black-and-gold fragrance carton with hairline framing.',
+    boxType: 'rte', dims: [45, 45, 115], materialId: 'black',
+    board: '#0d0d10', inner: '#17171b',
+    swatch: ['#0d0d10', '#c8a94f', '#f3efe6'],
+    build: (net) => ({
+      fills: { front: '#0d0d10', back: '#0d0d10', 'side-r': '#121216', 'side-l': '#121216', 'lid-top': '#c8a94f', 'lid-bot': '#c8a94f' },
+      objects: [
+        Rct({ ...on(net, 'front', 0.08, 0.05, 0.84, 0.9), fill: 'transparent', stroke: '#c8a94f', strokeW: 0.35, opacity: 0.9, name: 'Hairline frame' }),
+        T({ ...on(net, 'front', 0.12, 0.3, 0.76, 0.12), text: 'NOIR', fill: '#f3efe6', size: fit('NOIR', pw(net, 'front', 0.7), 4, 14), weight: 400, tracking: 4, font: SERIF, name: 'Wordmark' }),
+        newObject('line', { ...on(net, 'front', 0.36, 0.45, 0.28, 0.004), h: 0.35, fill: '#c8a94f' }),
+        T({ ...on(net, 'front', 0.12, 0.5, 0.76, 0.07), text: 'EAU DE PARFUM', fill: '#c8a94f', size: fit('EAU DE PARFUM', pw(net, 'front', 0.76), 1.2, 3.4), weight: 600, tracking: 1.2 }),
+        T({ ...on(net, 'front', 0.12, 0.84, 0.76, 0.06), text: '50 ML', fill: '#8e8676', size: 2.8, weight: 500, tracking: 2 }),
+        T({ ...on(net, 'back', 0.12, 0.14, 0.76, 0.3), text: 'Cedar, iris\nand black pepper.', fill: '#cfc9bb', size: 3, weight: 400, lineHeight: 1.6, font: SERIF }),
+        Rct({ ...on(net, 'back', 0.2, 0.74, 0.6, 0.12), fill: '#ffffff', radius: 0.8, name: 'Barcode plate' }),
+      ],
+    }),
+  },
+  {
+    id: 'harvest-granola',
+    name: 'Harvest Granola',
+    category: 'Food & Bev',
+    blurb: 'Tall seal-end grocery carton with a big shelf headline.',
+    boxType: 'seal', dims: [190, 70, 250], materialId: 'sbs',
+    board: '#fdf6e7', inner: '#f2ead6',
+    swatch: ['#f6c453', '#2e5c3e', '#b23a1f'],
+    build: (net) => ({
+      fills: { front: '#f6c453', back: '#f6c453', 'side-r': '#e8b544', 'side-l': '#e8b544', 'lid-top': '#2e5c3e', 'lid-topf': '#2e5c3e', 'lid-bot': '#2e5c3e', 'lid-botf': '#2e5c3e' },
+      objects: [
+        El({ ...on(net, 'front', 0.14, 0.06, 0.72, 0.3), fill: '#fdf6e7', opacity: 0.55 }),
+        T({ ...on(net, 'front', 0.08, 0.13, 0.84, 0.12), text: 'HARVEST', fill: '#2e5c3e', size: fit('HARVEST', pw(net, 'front', 0.84), 3, 26), weight: 800, tracking: 3 }),
+        T({ ...on(net, 'front', 0.08, 0.27, 0.84, 0.08), text: 'MAPLE PECAN GRANOLA', fill: '#b23a1f', size: fit('MAPLE PECAN GRANOLA', pw(net, 'front', 0.84), 1.2, 8), weight: 700, tracking: 1.2 }),
+        newObject('line', { ...on(net, 'front', 0.2, 0.38, 0.6, 0.004), h: 0.8, fill: '#2e5c3e' }),
+        T({ ...on(net, 'front', 0.1, 0.44, 0.8, 0.1), text: 'Slow-baked in\nsmall batches', fill: '#3d3222', size: 9, weight: 500, lineHeight: 1.45, font: SERIF }),
+        Rct({ ...on(net, 'front', 0.3, 0.66, 0.4, 0.12), fill: '#2e5c3e', radius: 3 }),
+        T({ ...on(net, 'front', 0.3, 0.695, 0.4, 0.06), text: 'NO REFINED SUGAR', fill: '#f6c453', size: fit('NO REFINED SUGAR', pw(net, 'front', 0.36), 0.8, 5), weight: 700, tracking: 0.8 }),
+        T({ ...on(net, 'front', 0.1, 0.86, 0.8, 0.06), text: 'NET 500 g', fill: '#3d3222', size: 6, weight: 700, tracking: 1 }),
+        T({ ...on(net, 'back', 0.1, 0.1, 0.8, 0.3), text: 'Oats, pecans, maple syrup,\ncoconut oil, sea salt.\n\nStore in a cool dry place.', fill: '#3d3222', size: 6, weight: 400, align: 'left', lineHeight: 1.6 }),
+      ],
+    }),
+  },
+  {
+    id: 'hop-house',
+    name: 'Hop House 4-Pack',
+    category: 'Food & Bev',
+    blurb: 'Corrugated slotted carton for a craft beer four-pack.',
+    boxType: 'rsc', dims: [200, 105, 175], materialId: 'eflute',
+    board: '#d8c3a2', inner: '#c9b393',
+    swatch: ['#1f3b2c', '#e0673c', '#d8c3a2'],
+    build: (net) => ({
+      fills: { front: '#1f3b2c', back: '#1f3b2c', 'side-r': '#162c20', 'side-l': '#162c20' },
+      objects: [
+        T({ ...on(net, 'front', 0.08, 0.16, 0.84, 0.16), text: 'HOP HOUSE', fill: '#f2e8d5', size: fit('HOP HOUSE', pw(net, 'front', 0.84), 2, 26), weight: 800, tracking: 2 }),
+        newObject('line', { ...on(net, 'front', 0.24, 0.36, 0.52, 0.004), h: 1, fill: '#e0673c' }),
+        T({ ...on(net, 'front', 0.08, 0.42, 0.84, 0.09), text: 'WEST COAST IPA', fill: '#e0673c', size: fit('WEST COAST IPA', pw(net, 'front', 0.84), 2, 12), weight: 700, tracking: 2 }),
+        T({ ...on(net, 'front', 0.08, 0.56, 0.84, 0.08), text: '4 × 330 ml  ·  6.2% ABV', fill: '#9db3a4', size: 7, weight: 500, tracking: 0.6 }),
+        Rct({ ...on(net, 'front', 0.36, 0.7, 0.28, 0.16), fill: 'transparent', stroke: '#e0673c', strokeW: 1, radius: 2 }),
+        T({ ...on(net, 'front', 0.36, 0.755, 0.28, 0.07), text: 'CANNED FRESH', fill: '#e0673c', size: fit('CANNED FRESH', pw(net, 'front', 0.24), 0.6, 6), weight: 700, tracking: 0.6 }),
+        T({ ...on(net, 'side-r', 0.1, 0.42, 0.8, 0.12), text: 'IPA', fill: '#e0673c', size: fit('IPA', pw(net, 'side-r', 0.8), 3, 22), weight: 800, tracking: 3 }),
+        T({ ...on(net, 'bt', 0.1, 0.3, 0.8, 0.3), text: 'HOP HOUSE', fill: '#6f8478', size: fit('HOP HOUSE', pw(net, 'bt', 0.8), 1, 14), weight: 700, tracking: 1 }),
+      ],
+    }),
+  },
+  {
+    id: 'swift-shipper',
+    name: 'Swift Shipper',
+    category: 'E-commerce',
+    blurb: 'One-colour corrugated shipper — cheap to print, hard to ignore.',
+    boxType: 'rsc', dims: [340, 240, 130], materialId: 'bflute',
+    board: '#c2a887', inner: '#b59a78',
+    swatch: ['#c2a887', '#20232a', '#ff5c39'],
+    build: (net) => ({
+      fills: {},
+      objects: [
+        T({ ...on(net, 'front', 0.06, 0.24, 0.5, 0.16), text: 'SWIFT', fill: '#20232a', size: fit('SWIFT', pw(net, 'front', 0.5), 2, 34), weight: 800, tracking: 2, align: 'left' }),
+        newObject('line', { ...on(net, 'front', 0.06, 0.45, 0.36, 0.004), h: 1.6, fill: '#ff5c39' }),
+        T({ ...on(net, 'front', 0.06, 0.52, 0.5, 0.08), text: 'HANDLE WITH CARE', fill: '#20232a', size: fit('HANDLE WITH CARE', pw(net, 'front', 0.5), 1, 9), weight: 600, tracking: 1, align: 'left' }),
+        Rct({ ...on(net, 'front', 0.66, 0.24, 0.26, 0.4), fill: 'transparent', stroke: '#20232a', strokeW: 1.2, radius: 2, opacity: 0.55, name: 'Label window' }),
+        T({ ...on(net, 'front', 0.66, 0.4, 0.26, 0.07), text: 'SHIPPING LABEL', fill: '#20232a', size: fit('SHIPPING LABEL', pw(net, 'front', 0.24), 0.6, 6), weight: 600, tracking: 0.6, opacity: 0.5 }),
+        T({ ...on(net, 'side-r', 0.1, 0.44, 0.8, 0.12), text: 'SWIFT', fill: '#20232a', size: fit('SWIFT', pw(net, 'side-r', 0.8), 2, 20), weight: 800, tracking: 2 }),
+        T({ ...on(net, 'bt', 0.08, 0.3, 0.84, 0.3), text: '100% RECYCLED BOARD', fill: '#6b5b46', size: fit('100% RECYCLED BOARD', pw(net, 'bt', 0.84), 1, 11), weight: 600, tracking: 1 }),
+      ],
+    }),
+  },
+  {
+    id: 'pixel-play',
+    name: 'Pixel Play',
+    category: 'Kids',
+    blurb: 'Loud toy carton with primary blocks and a big number.',
+    boxType: 'ste', dims: [120, 70, 160], materialId: 'sbs',
+    board: '#ffffff', inner: '#f3f4f6',
+    swatch: ['#2563eb', '#facc15', '#ef4444'],
+    build: (net) => ({
+      fills: { front: '#2563eb', back: '#1d4ed8', 'side-r': '#1e40af', 'side-l': '#1e40af', 'lid-top': '#facc15', 'lid-bot': '#facc15' },
+      objects: [
+        Rct({ ...on(net, 'front', 0.08, 0.08, 0.38, 0.26), fill: '#facc15', radius: 3 }),
+        Rct({ ...on(net, 'front', 0.5, 0.08, 0.42, 0.26), fill: '#ef4444', radius: 3 }),
+        El({ ...on(net, 'front', 0.56, 0.12, 0.3, 0.18), fill: '#ffffff', opacity: 0.9 }),
+        T({ ...on(net, 'front', 0.06, 0.42, 0.88, 0.14), text: 'PIXEL PLAY', fill: '#ffffff', size: fit('PIXEL PLAY', pw(net, 'front', 0.88), 1.5, 17), weight: 800, tracking: 1.5 }),
+        T({ ...on(net, 'front', 0.06, 0.58, 0.88, 0.08), text: '120 BUILDING BLOCKS', fill: '#bfdbfe', size: fit('120 BUILDING BLOCKS', pw(net, 'front', 0.88), 1, 6), weight: 700, tracking: 1 }),
+        El({ ...on(net, 'front', 0.34, 0.7, 0.32, 0.2), fill: '#facc15' }),
+        T({ ...on(net, 'front', 0.34, 0.775, 0.32, 0.09), text: '5+', fill: '#1d4ed8', size: fit('5+', pw(net, 'front', 0.2), 0, 16), weight: 800 }),
+        T({ ...on(net, 'back', 0.1, 0.16, 0.8, 0.2), text: 'Build it. Break it.\nBuild it again.', fill: '#ffffff', size: 7, weight: 700, lineHeight: 1.4 }),
+      ],
+    }),
+  },
+  {
+    id: 'ember-candle',
+    name: 'Ember Candle Tray',
+    category: 'Home',
+    blurb: 'Matte tray base for a candle set, made for a printed sleeve.',
+    boxType: 'tray', dims: [110, 110, 70], materialId: 'black',
+    board: '#1b1a18', inner: '#2a2825',
+    swatch: ['#1b1a18', '#d98b5f', '#efe7dc'],
+    build: (net) => ({
+      fills: { base: '#1b1a18', front: '#141312', back: '#141312', 'side-l': '#141312', 'side-r': '#141312' },
+      objects: [
+        Rct({ ...on(net, 'base', 0.1, 0.1, 0.8, 0.8), fill: 'transparent', stroke: '#d98b5f', strokeW: 0.4, opacity: 0.7 }),
+        T({ ...on(net, 'base', 0.15, 0.4, 0.7, 0.12), text: 'EMBER', fill: '#efe7dc', size: fit('EMBER', pw(net, 'base', 0.7), 6, 15), weight: 400, tracking: 6, font: SERIF }),
+        T({ ...on(net, 'base', 0.15, 0.55, 0.7, 0.06), text: 'SMOKED FIG & OAK', fill: '#d98b5f', size: fit('SMOKED FIG & OAK', pw(net, 'base', 0.7), 1, 4), weight: 600, tracking: 1 }),
+        T({ ...on(net, 'front', 0.1, 0.35, 0.8, 0.1), text: 'HAND POURED · 220 g', fill: '#8c8477', size: fit('HAND POURED · 220 g', pw(net, 'front', 0.8), 1, 5), weight: 500, tracking: 1 }),
+      ],
+    }),
+  },
+  {
+    id: 'studio-sleeve',
+    name: 'Studio Media Sleeve',
+    category: 'Media',
+    blurb: 'Editorial sleeve for a book, vinyl or hardware bundle.',
+    boxType: 'sleeve', dims: [150, 25, 220], materialId: 'grey',
+    board: '#d9d6cf', inner: '#cfccc4',
+    swatch: ['#111111', '#d9d6cf', '#ff5c39'],
+    build: (net) => ({
+      fills: { front: '#111111', back: '#d9d6cf', 'side-r': '#1c1c1c', 'side-l': '#1c1c1c' },
+      objects: [
+        T({ ...on(net, 'front', 0.08, 0.1, 0.84, 0.16), text: 'STUDIO', fill: '#f5f3ee', size: fit('STUDIO', pw(net, 'front', 0.84), 2, 30), weight: 800, tracking: 2, align: 'left' }),
+        T({ ...on(net, 'front', 0.08, 0.26, 0.84, 0.08), text: 'VOLUME ONE', fill: '#ff5c39', size: fit('VOLUME ONE', pw(net, 'front', 0.5), 3, 8), weight: 600, tracking: 3, align: 'left' }),
+        newObject('line', { ...on(net, 'front', 0.08, 0.42, 0.84, 0.004), h: 0.5, fill: '#4a4a4a' }),
+        T({ ...on(net, 'front', 0.08, 0.5, 0.84, 0.24), text: 'Twelve conversations\nabout making things\nthat last.', fill: '#c9c5bc', size: 6.5, weight: 400, align: 'left', lineHeight: 1.7, font: SERIF }),
+        T({ ...on(net, 'front', 0.08, 0.86, 0.84, 0.06), text: 'BOXCRAFT EDITIONS', fill: '#6d6a64', size: fit('BOXCRAFT EDITIONS', pw(net, 'front', 0.6), 1.4, 4), weight: 600, tracking: 1.4, align: 'left' }),
+        T({ ...on(net, 'back', 0.1, 0.44, 0.8, 0.1), text: 'ISBN 978-0-00-000000-0', fill: '#4a4a4a', size: fit('ISBN 978-0-00-000000-0', pw(net, 'back', 0.8), 0.5, 5), weight: 500, tracking: 0.5, font: MONO }),
+      ],
+    }),
+  },
+  {
+    id: 'wild-pet',
+    name: 'Wild Pantry Treats',
+    category: 'Pet',
+    blurb: 'Kraft pet-treat carton with a friendly badge lockup.',
+    boxType: 'ste', dims: [90, 60, 180], materialId: 'kraft',
+    board: '#c9a97e', inner: '#bb9a6c',
+    swatch: ['#c9a97e', '#38543f', '#e07a4f'],
+    build: (net) => ({
+      fills: { front: '#c9a97e', back: '#c9a97e', 'side-r': '#bb9a6c', 'side-l': '#bb9a6c', 'lid-top': '#38543f', 'lid-bot': '#38543f' },
+      objects: [
+        El({ ...on(net, 'front', 0.2, 0.06, 0.6, 0.26), fill: '#38543f' }),
+        T({ ...on(net, 'front', 0.24, 0.15, 0.52, 0.08), text: 'WILD', fill: '#f2e8d8', size: fit('WILD', pw(net, 'front', 0.5), 2, 11), weight: 800, tracking: 2 }),
+        T({ ...on(net, 'front', 0.24, 0.22, 0.52, 0.05), text: 'PANTRY', fill: '#e07a4f', size: fit('PANTRY', pw(net, 'front', 0.5), 1.5, 5), weight: 700, tracking: 1.5 }),
+        T({ ...on(net, 'front', 0.08, 0.4, 0.84, 0.1), text: 'SALMON TREATS', fill: '#38543f', size: fit('SALMON TREATS', pw(net, 'front', 0.84), 0.8, 10), weight: 800, tracking: 0.8 }),
+        T({ ...on(net, 'front', 0.1, 0.51, 0.8, 0.08), text: 'grain free · single protein', fill: '#7a6446', size: fit('grain free · single protein', pw(net, 'front', 0.8), 0.4, 4.4), weight: 500, tracking: 0.4 }),
+        newObject('line', { ...on(net, 'front', 0.3, 0.62, 0.4, 0.004), h: 0.5, fill: '#e07a4f' }),
+        T({ ...on(net, 'front', 0.1, 0.68, 0.8, 0.08), text: 'FOR DOGS OF ALL SIZES', fill: '#7a6446', size: fit('FOR DOGS OF ALL SIZES', pw(net, 'front', 0.8), 0.6, 3.6), weight: 600, tracking: 0.6 }),
+        T({ ...on(net, 'front', 0.1, 0.85, 0.8, 0.07), text: '200 g', fill: '#38543f', size: 6, weight: 800, tracking: 1 }),
+      ],
+    }),
+  },
+  {
+    id: 'daily-vitamin',
+    name: 'Daily Ritual Supplements',
+    category: 'Health',
+    blurb: 'Calm DTC supplement carton with a numbered system.',
+    boxType: 'rte', dims: [65, 65, 110], materialId: 'sbs',
+    board: '#f7f7f4', inner: '#eeeee9',
+    swatch: ['#eef2ea', '#3f6f52', '#1a1a17'],
+    build: (net) => ({
+      fills: { front: '#eef2ea', back: '#eef2ea', 'side-r': '#e3e9de', 'side-l': '#e3e9de', 'lid-top': '#3f6f52', 'lid-bot': '#3f6f52' },
+      objects: [
+        T({ ...on(net, 'front', 0.1, 0.1, 0.8, 0.1), text: '01', fill: '#3f6f52', size: fit('01', pw(net, 'front', 0.3), 1, 11), weight: 800, tracking: 1, align: 'left' }),
+        newObject('line', { ...on(net, 'front', 0.1, 0.24, 0.8, 0.004), h: 0.4, fill: '#c3cfc2' }),
+        T({ ...on(net, 'front', 0.1, 0.36, 0.8, 0.12), text: 'DAILY\nRITUAL', fill: '#1a1a17', size: fit('RITUAL', pw(net, 'front', 0.8), 0.5, 9), weight: 700, tracking: 0.5, align: 'left', lineHeight: 1.15 }),
+        T({ ...on(net, 'front', 0.1, 0.56, 0.8, 0.08), text: 'Magnesium + B6', fill: '#3f6f52', size: fit('Magnesium + B6', pw(net, 'front', 0.8), 0.3, 5), weight: 600, tracking: 0.3, align: 'left' }),
+        T({ ...on(net, 'front', 0.1, 0.84, 0.8, 0.07), text: '60 CAPSULES', fill: '#7d8a7c', size: fit('60 CAPSULES', pw(net, 'front', 0.6), 1.2, 3.4), weight: 600, tracking: 1.2, align: 'left' }),
+        T({ ...on(net, 'back', 0.12, 0.14, 0.76, 0.4), text: 'Two capsules with\nfood, evening.\n\nNot a substitute for a\nbalanced diet.', fill: '#4a5449', size: 3.2, weight: 400, align: 'left', lineHeight: 1.6 }),
+        Rct({ ...on(net, 'back', 0.12, 0.76, 0.44, 0.12), fill: '#ffffff', radius: 0.8, name: 'Barcode plate' }),
+      ],
+    }),
+  },
+  {
+    id: 'atelier-soap',
+    name: 'Atelier Soap Sleeve',
+    category: 'Beauty',
+    blurb: 'Narrow band sleeve for a bar of soap or a small block.',
+    boxType: 'sleeve', dims: [80, 35, 55], materialId: 'kraft',
+    board: '#cbb79c', inner: '#bfa98c',
+    swatch: ['#cbb79c', '#2f3e46', '#84a98c'],
+    build: (net) => ({
+      fills: { front: '#2f3e46', back: '#2f3e46', 'side-r': '#84a98c', 'side-l': '#84a98c' },
+      objects: [
+        T({ ...on(net, 'front', 0.08, 0.24, 0.84, 0.16), text: 'ATELIER', fill: '#f0ece2', size: fit('ATELIER', pw(net, 'front', 0.84), 3, 12), weight: 400, tracking: 3, font: SERIF }),
+        newObject('line', { ...on(net, 'front', 0.34, 0.46, 0.32, 0.004), h: 0.4, fill: '#84a98c' }),
+        T({ ...on(net, 'front', 0.08, 0.54, 0.84, 0.1), text: 'ROSEMARY & CLAY', fill: '#84a98c', size: fit('ROSEMARY & CLAY', pw(net, 'front', 0.84), 0.8, 4.2), weight: 600, tracking: 0.8 }),
+        T({ ...on(net, 'front', 0.08, 0.74, 0.84, 0.08), text: 'COLD PROCESS · 120 g', fill: '#9fb0a4', size: fit('COLD PROCESS · 120 g', pw(net, 'front', 0.7), 0.5, 3.2), weight: 500, tracking: 0.5 }),
+      ],
+    }),
+  },
+  {
+    id: 'circuit-mailer',
+    name: 'Circuit Accessory Mailer',
+    category: 'Tech',
+    blurb: 'Slim roll-end mailer with a printed inside lid.',
+    boxType: 'mailer', dims: [180, 120, 40], materialId: 'eflute',
+    board: '#e7e6e3', inner: '#0f172a',
+    swatch: ['#0f172a', '#38bdf8', '#f8fafc'],
+    build: (net) => ({
+      fills: { base: '#0f172a', front: '#0f172a', back: '#0f172a', 'side-l': '#0f172a', 'side-r': '#0f172a', lid: '#f8fafc', lip: '#0f172a' },
+      objects: [
+        T({ ...on(net, 'lid', 0.08, 0.3, 0.84, 0.2), text: 'CIRCUIT', fill: '#0f172a', size: fit('CIRCUIT', pw(net, 'lid', 0.84), 4, 24), weight: 800, tracking: 4 }),
+        T({ ...on(net, 'lid', 0.08, 0.54, 0.84, 0.08), text: 'EVERYDAY CARRY, CHARGED', fill: '#38bdf8', size: fit('EVERYDAY CARRY, CHARGED', pw(net, 'lid', 0.84), 1.4, 6), weight: 700, tracking: 1.4 }),
+        newObject('line', { ...on(net, 'lid', 0.36, 0.68, 0.28, 0.004), h: 0.8, fill: '#38bdf8' }),
+        T({ ...on(net, 'base', 0.1, 0.42, 0.8, 0.16), text: 'THANKS FOR\nPLUGGING IN', fill: '#38bdf8', size: fit('PLUGGING IN', pw(net, 'base', 0.8), 2, 16), weight: 800, tracking: 2, lineHeight: 1.3, name: 'Inside print' }),
+        T({ ...on(net, 'front', 0.08, 0.3, 0.4, 0.4), text: 'CIRCUIT', fill: '#f8fafc', size: fit('CIRCUIT', pw(net, 'front', 0.4), 1.5, 9), weight: 800, tracking: 1.5, align: 'left' }),
+      ],
+    }),
+  },
+  {
+    id: 'rise-bakery',
+    name: 'Rise Bakery Box',
+    category: 'Food & Bev',
+    blurb: 'Wide shallow pastry carton with a hand-lettered feel.',
+    boxType: 'ste', dims: [180, 180, 80], materialId: 'kraft',
+    board: '#d7bd97', inner: '#c9ad85',
+    swatch: ['#d7bd97', '#7b3f2e', '#f5ede0'],
+    build: (net) => ({
+      fills: { 'lid-top': '#7b3f2e', 'lid-bot': '#7b3f2e', front: '#d7bd97', back: '#d7bd97' },
+      objects: [
+        T({ ...on(net, 'front', 0.1, 0.2, 0.8, 0.24), text: 'Rise', fill: '#7b3f2e', size: fit('Rise', pw(net, 'front', 0.8), 1, 34), weight: 400, tracking: 1, font: SERIF }),
+        T({ ...on(net, 'front', 0.1, 0.52, 0.8, 0.12), text: 'BAKERY & COFFEE', fill: '#5c4a35', size: fit('BAKERY & COFFEE', pw(net, 'front', 0.8), 2.4, 8), weight: 600, tracking: 2.4 }),
+        newObject('line', { ...on(net, 'front', 0.32, 0.72, 0.36, 0.004), h: 0.8, fill: '#7b3f2e' }),
+        T({ ...on(net, 'lid-top', 0.1, 0.42, 0.8, 0.14), text: 'BAKED THIS MORNING', fill: '#f5ede0', size: fit('BAKED THIS MORNING', pw(net, 'lid-top', 0.8), 2, 12), weight: 700, tracking: 2 }),
+        T({ ...on(net, 'side-r', 0.1, 0.4, 0.8, 0.16), text: 'Rise', fill: '#7b3f2e', size: fit('Rise', pw(net, 'side-r', 0.6), 1, 20), weight: 400, tracking: 1, font: SERIF }),
+      ],
+    }),
+  },
+  {
+    id: 'trail-mono',
+    name: 'Trail Utility',
+    category: 'Outdoor',
+    blurb: 'Monospaced technical layout for gear and hardware.',
+    boxType: 'rte', dims: [140, 60, 90], materialId: 'grey',
+    board: '#b9b6ae', inner: '#a9a69e',
+    swatch: ['#2b2f33', '#f4b942', '#b9b6ae'],
+    build: (net) => ({
+      fills: { front: '#2b2f33', back: '#2b2f33', 'side-r': '#22262a', 'side-l': '#22262a', 'lid-top': '#f4b942', 'lid-bot': '#f4b942' },
+      objects: [
+        T({ ...on(net, 'front', 0.07, 0.12, 0.86, 0.1), text: 'TRAIL / 04', fill: '#f4b942', size: fit('TRAIL / 04', pw(net, 'front', 0.5), 1, 7), weight: 700, tracking: 1, align: 'left', font: MONO }),
+        newObject('line', { ...on(net, 'front', 0.07, 0.26, 0.86, 0.004), h: 0.4, fill: '#565c62' }),
+        T({ ...on(net, 'front', 0.07, 0.34, 0.86, 0.16), text: 'HEADLAMP', fill: '#f1f3f4', size: fit('HEADLAMP', pw(net, 'front', 0.86), 1.5, 18), weight: 800, tracking: 1.5, align: 'left', font: HELV }),
+        T({ ...on(net, 'front', 0.07, 0.56, 0.5, 0.16), text: '400 lumens\nIPX7 · USB-C', fill: '#9aa2a8', size: fit('IPX7 · USB-C', pw(net, 'front', 0.45), 0.4, 5), weight: 500, align: 'left', lineHeight: 1.5, font: MONO }),
+        Rct({ ...on(net, 'front', 0.72, 0.56, 0.21, 0.24), fill: '#f4b942', radius: 1.5 }),
+        T({ ...on(net, 'front', 0.72, 0.65, 0.21, 0.08), text: '04', fill: '#2b2f33', size: fit('04', pw(net, 'front', 0.16), 0, 12), weight: 800 }),
+      ],
+    }),
+  },
+];
+
+export function applyTemplate(t: Template): Design {
+  const base = startDesign();
+  const type = boxTypeById(t.boxType);
+  const [L, W, H] = t.dims ?? type.defaults;
+  const params = { L, W, H, caliper: 0.45, glue: Math.max(10, Math.min(20, W * 0.4)), bleed: 3 };
+  const net = buildNet(t.boxType, params);
+  const { fills, objects } = t.build(net);
+  return {
+    ...base,
+    name: t.name,
+    boxType: t.boxType,
+    params,
+    materialId: t.materialId,
+    boardColor: t.board,
+    innerColor: t.inner,
+    panelFills: fills,
+    objects,
+  };
+}
+
+export const PALETTES: { name: string; colors: string[] }[] = [
+  { name: 'Deep Sea', colors: ['#0b3c49', '#128f8b', '#e9d8a6', '#f7f4ef'] },
+  { name: 'Terracotta', colors: ['#b5533c', '#e2a56a', '#f4e6d4', '#3a2a25'] },
+  { name: 'Neo Mint', colors: ['#0f3d3e', '#8ee4af', '#edf7f6', '#123'] },
+  { name: 'Mono', colors: ['#111113', '#3a3a3f', '#c8c8cc', '#f5f5f7'] },
+  { name: 'Berry Pop', colors: ['#5b2a86', '#ff3d68', '#ffd166', '#fff8f2'] },
+  { name: 'Kraft Natural', colors: ['#c8a074', '#7a5a3a', '#2b1d16', '#f0e6d8'] },
+  { name: 'Clinical', colors: ['#0057b8', '#00a3a1', '#e9f1fa', '#0b1f33'] },
+  { name: 'Sunbaked', colors: ['#e4572e', '#f4a259', '#f9f1e7', '#1b3a4b'] },
+];
