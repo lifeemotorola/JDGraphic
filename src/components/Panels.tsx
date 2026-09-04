@@ -6,6 +6,7 @@ import {
   MATERIALS, materialById, newObject, setBoxType, useStore, type DesignObject,
 } from '../lib/store';
 import { PALETTES, TEMPLATES, applyTemplate } from '../lib/templates';
+import { templateDesign, templateSwatch, useLibrary } from '../lib/library';
 import { ColorIn, Field, Group, Icon, I, NumIn, Segmented, Slider, Swatches } from './ui';
 import { NetThumb } from './Thumb';
 import {
@@ -110,6 +111,8 @@ export function DesignPanel({ selectedPanel }: { selectedPanel: string | null })
   const commit = useStore((s) => s.commit);
   const addObject = useStore((s) => s.addObject);
   const loadDesign = useStore((s) => s.loadDesign);
+  const mine = useLibrary((s) => s.items);
+  const openSave = useLibrary((s) => s.openSave);
   const file = useRef<HTMLInputElement>(null);
 
   const panel = selectedPanel ? net.byId[selectedPanel] : null;
@@ -201,7 +204,30 @@ export function DesignPanel({ selectedPanel }: { selectedPanel: string | null })
         ))}
       </Group>
 
-      <Group title="Start from a template">
+      {!!mine.length && (
+        <Group
+          title="My templates"
+          right={<button className="link-mini" onClick={() => openSave()}>Save current</button>}
+        >
+          <div className="tpl-mini">
+            {mine.slice(0, 6).map((t) => (
+              <button key={t.id} title={t.blurb || t.category} onClick={() => loadDesign(templateDesign(t))}>
+                <div style={{ display: 'flex', height: 34 }}>
+                  {(templateSwatch(t).length ? templateSwatch(t) : ['#2a3140']).map((c, i) => (
+                    <div key={`${c}${i}`} style={{ flex: 1, background: c }} />
+                  ))}
+                </div>
+                <b>{t.name}</b>
+              </button>
+            ))}
+          </div>
+        </Group>
+      )}
+
+      <Group
+        title="Start from a template"
+        right={mine.length ? undefined : <button className="link-mini" onClick={() => openSave()}>Save current</button>}
+      >
         <div className="tpl-mini">
           {TEMPLATES.slice(0, 6).map((t) => (
             <button key={t.id} onClick={() => loadDesign(applyTemplate(t))}>
@@ -301,6 +327,7 @@ export function ExportPanel({ engine, toast }: { engine: React.MutableRefObject<
   const design = useStore((s) => s.design);
   const net = useStore((s) => s.net);
   const loadDesign = useStore((s) => s.loadDesign);
+  const openSaveTpl = useLibrary((s) => s.openSave);
   const [dpi, setDpi] = useState<'150' | '300' | '600'>('300');
   const [busy, setBusy] = useState('');
   const imp = useRef<HTMLInputElement>(null);
@@ -378,6 +405,9 @@ export function ExportPanel({ engine, toast }: { engine: React.MutableRefObject<
           </button>
           <button className="ebtn" onClick={() => imp.current?.click()}>
             <Icon d={I.copy} size={13} /> Open project file
+          </button>
+          <button className="ebtn" onClick={() => openSaveTpl()}>
+            <Icon d={I.plus} size={13} /> Save to my templates
           </button>
           <input ref={imp} type="file" accept=".json,application/json" hidden onChange={(e) => {
             const f = e.target.files?.[0];

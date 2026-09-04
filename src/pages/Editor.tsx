@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../lib/store';
-import { TEMPLATES, applyTemplate } from '../lib/templates';
-import { boxTypeById } from '../lib/geometry';
+import { useLibrary } from '../lib/library';
 import type { BoxEngine } from '../three/engine';
 import Viewer3D from '../components/Viewer3D';
 import Dieline2D from '../components/Dieline2D';
 import Inspector from '../components/Inspector';
 import { DesignPanel, ExportPanel, MaterialPanel, ScenePanel, StructurePanel } from '../components/Panels';
-import { BoxThumb } from '../components/Thumb';
+import { SaveTemplateDialog, TemplateBrowser } from '../components/TemplateBrowser';
 import { Icon, I } from '../components/ui';
 
 type Tab = 'structure' | 'design' | 'material' | 'scene' | 'export';
@@ -33,18 +32,16 @@ export default function Editor({ nav }: { nav: (p: string) => void }) {
   const dup = useStore((s) => s.duplicate);
   const update = useStore((s) => s.updateObject);
   const loadDesign = useStore((s) => s.loadDesign);
+  const myTemplates = useLibrary((s) => s.items.length);
+  const openSave = useLibrary((s) => s.openSave);
 
   const engine = useRef<BoxEngine | null>(null);
   const [mode, setMode] = useState<'3d' | 'split' | 'die'>('split');
   const [panelSel, setPanelSel] = useState<string | null>(null);
   const [toast, setToast] = useState('');
-  const [tplOpen, setTplOpen] = useState(false);
+  const [tplOpen, setTplOpen] = useState<null | 'built' | 'mine'>(null);
   /** on narrow viewports the side panels become slide-over drawers */
   const [drawer, setDrawer] = useState<'tools' | 'layers' | null>(null);
-  const [tplCat, setTplCat] = useState('All');
-  const tplCats = ['All', ...Array.from(new Set(TEMPLATES.map((t) => t.category)))];
-  const tplList = tplCat === 'All' ? TEMPLATES : TEMPLATES.filter((t) => t.category === tplCat);
-
   const say = (m: string) => { setToast(m); setTimeout(() => setToast(''), 2200); };
 
   useEffect(() => {
@@ -81,7 +78,15 @@ export default function Editor({ nav }: { nav: (p: string) => void }) {
           onChange={(e) => commit((d) => { d.name = e.target.value; }, 'name')} />
         <button className="ebtn sq" disabled={!past} onClick={undo} title="Undo (⌘Z)"><Icon d={I.undo} size={14} /></button>
         <button className="ebtn sq" disabled={!future} onClick={redo} title="Redo (⇧⌘Z)"><Icon d={I.redo} size={14} /></button>
-        <button className="ebtn" onClick={() => setTplOpen(true)}><Icon d={I.sparkle} size={13} /> Templates</button>
+        <button className="ebtn" onClick={() => setTplOpen('built')}>
+          <Icon d={I.sparkle} size={13} /> <span className="lbl">Templates</span>
+        </button>
+        <button className="ebtn" title="Save this design to your template library" onClick={() => openSave()}>
+          <Icon d={I.plus} size={13} /> <span className="lbl">Save template</span>
+        </button>
+        <button className={`ebtn${myTemplates ? '' : ' muted'}`} title="My templates" onClick={() => setTplOpen('mine')}>
+          <Icon d={I.layers} size={13} /> <span className="lbl">Mine</span><em className="cnt">{myTemplates}</em>
+        </button>
 
         <div className="spacer" />
 
@@ -147,42 +152,15 @@ export default function Editor({ nav }: { nav: (p: string) => void }) {
       {toast && <div className="toast">{toast}</div>}
 
       {tplOpen && (
-        <div className="modal-bg" onClick={() => setTplOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-h">
-              <h3>Start from a template</h3>
-              <span style={{ color: 'var(--txt-3)', fontSize: 13 }}>{TEMPLATES.length} starting points — structure, colour and copy all stay editable.</span>
-              <div className="spacer" />
-              <button className="ebtn sq" onClick={() => setTplOpen(false)}><Icon d={I.x} size={14} /></button>
-            </div>
-            <div className="modal-cats">
-              {tplCats.map((c) => (
-                <button key={c} className={`chip-btn${tplCat === c ? ' on' : ''}`} onClick={() => setTplCat(c)}>
-                  {c}
-                  <em>{c === 'All' ? TEMPLATES.length : TEMPLATES.filter((t) => t.category === c).length}</em>
-                </button>
-              ))}
-            </div>
-            <div className="modal-b">
-              <div className="tpl-grid">
-                {tplList.map((t) => (
-                  <button key={t.id} onClick={() => { loadDesign(applyTemplate(t)); setTplOpen(false); say(`${t.name} loaded`); }}>
-                    <BoxThumb design={applyTemplate(t)} h={132} bg="#e9edf3" />
-                    <div className="tb">
-                      <b>{t.name}</b>
-                      <span>{t.blurb}</span>
-                      <div className="tb-meta">
-                        <span className="tb-tag">{boxTypeById(t.boxType).short}</span>
-                        <span>{t.dims.join(' × ')} mm</span>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        <TemplateBrowser
+          initialSource={tplOpen}
+          onClose={() => setTplOpen(null)}
+          onLoad={(d, label) => { loadDesign(d); setTplOpen(null); say(`${label} loaded`); }}
+        />
       )}
+
+      <SaveTemplateDialog toast={say} />
+
     </div>
   );
 }
