@@ -49,7 +49,7 @@ export const DEFAULT_CATEGORY = 'My designs';
 export const SUGGESTED_CATEGORIES = [
   DEFAULT_CATEGORY, 'Beauty', 'Food & Bev', 'Tech', 'E-commerce',
   'Health', 'Kids', 'Home', 'Media', 'Pet', 'Outdoor', 'Premium',
-  'Wine & Spirits',
+  'Fashion', 'Stationery', 'Wine & Spirits',
 ];
 
 const deepClone = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
