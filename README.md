@@ -11,7 +11,7 @@ the render and the print files can never drift apart.
 
 | | |
 |---|---|
-| **100 templates** | Editable starting points across 19 categories—from beauty and food to fashion, baby, sports, hardware, automotive and games—searchable and filterable in the studio |
+| **150 templates** | Editable starting points across 19 categories—from beauty and food to fashion, baby, sports, hardware, automotive and games—searchable and filterable in the studio |
 | **My templates** | Save any design as your own reusable template — stored in the browser, editable, duplicable, and portable through a `.json` library file |
 | **7 structures** | Straight/Reverse Tuck End, Seal End, Regular Slotted Carton, Roll End Mailer, Sleeve, Open Tray |
 | **Parametric dielines** | Cut / crease / bleed / safe-area generated from L × W × H, caliper and glue-flap width |
