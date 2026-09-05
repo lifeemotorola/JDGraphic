@@ -7,6 +7,16 @@ import { Icon, I } from './ui';
 interface View { s: number; tx: number; ty: number; }
 type Mode = null | { m: 'move' | 'resize' | 'rot' | 'pan'; mx: number; my: number; orig: any; h?: number; sx?: number; sy?: number };
 
+/**
+ * Eight adjustment points per selected object: four corners plus four edge
+ * midpoints. Corners scale both axes (proportionally for images), edge points
+ * scale a single axis for finer, smoother adjustments.
+ * h = -1 is reserved for the rotation handle above the box.
+ */
+const HANDLES: readonly [number, number][] = [
+  [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0],
+];
+
 export default function Dieline2D({ selectedPanel, onSelectPanel }: {
   selectedPanel: string | null; onSelectPanel: (id: string | null) => void;
 }) {
@@ -140,9 +150,12 @@ export default function Dieline2D({ selectedPanel, onSelectPanel }: {
       ctx.lineWidth = 1.5;
       ctx.strokeRect(-w / 2, -h / 2, w, h);
       ctx.fillStyle = '#fff';
-      for (const [hx, hy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
+      for (let i = 0; i < HANDLES.length; i++) {
+        const [hx, hy] = HANDLES[i];
+        const corner = hx !== 0 && hy !== 0;
+        const sz = corner ? 8 : 7;   // edge-mid points sit slightly smaller
         ctx.beginPath();
-        ctx.rect(hx * w / 2 - 4, hy * h / 2 - 4, 8, 8);
+        ctx.rect(hx * w / 2 - sz / 2, hy * h / 2 - sz / 2, sz, sz);
         ctx.fill(); ctx.stroke();
       }
       ctx.beginPath();
@@ -172,9 +185,11 @@ export default function Dieline2D({ selectedPanel, onSelectPanel }: {
       const lx = dx * Math.cos(a) - dy * Math.sin(a);
       const ly = dx * Math.sin(a) + dy * Math.cos(a);
       const w = o.w * s, h = o.h * s;
-      const corners: [number, number][] = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
-      for (let i = 0; i < 4; i++) {
-        if (Math.abs(lx - corners[i][0] * w / 2) < 7 && Math.abs(ly - corners[i][1] * h / 2) < 7) return { id, h: i };
+      for (let i = 0; i < HANDLES.length; i++) {
+        const [hx, hy] = HANDLES[i];
+        // edge-mid points sit on the box edge, so give them a touch more reach
+        const tol = hx === 0 || hy === 0 ? 8 : 7;
+        if (Math.abs(lx - hx * w / 2) < tol && Math.abs(ly - hy * h / 2) < tol) return { id, h: i };
       }
       if (Math.abs(lx) < 8 && Math.abs(ly + h / 2 + 22) < 9) return { id, h: -1 };
     }
@@ -258,22 +273,42 @@ export default function Dieline2D({ selectedPanel, onSelectPanel }: {
       const r = (o.rot * Math.PI) / 180;
       const ux = { x: Math.cos(r), y: Math.sin(r) };
       const uy = { x: -Math.sin(r), y: Math.cos(r) };
-      const corners: [number, number][] = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
-      const [sx, sy] = corners[md.h!];
+      const [sx, sy] = HANDLES[md.h!];
+      const edgeX = sy === 0;   // left/right midpoint — width only
+      const edgeY = sx === 0;   // top/bottom midpoint — height only
       const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
       const fx = cx + ux.x * (-sx * o.w / 2) + uy.x * (-sy * o.h / 2);
       const fy = cy + ux.y * (-sx * o.w / 2) + uy.y * (-sy * o.h / 2);
       const vx = p.x - fx, vy = p.y - fy;
-      let nw = Math.max(2, (vx * ux.x + vy * ux.y) * sx);
-      let nh = Math.max(2, (vx * uy.x + vy * uy.y) * sy);
-      if (e.altKey || o.type === 'image') {
-        const ar = o.w / o.h;
-        if (nw / nh > ar) nw = nh * ar; else nh = nw / ar;
+      let nw: number, nh: number;
+      if (edgeX) {
+        // edge point on a side: width follows the pointer, height holds steady
+        nw = Math.max(2, (vx * ux.x + vy * ux.y) * sx);
+        nh = o.h;
+      } else if (edgeY) {
+        nw = o.w;
+        nh = Math.max(2, (vx * uy.x + vy * uy.y) * sy);
+      } else {
+        nw = Math.max(2, (vx * ux.x + vy * ux.y) * sx);
+        nh = Math.max(2, (vx * uy.x + vy * uy.y) * sy);
       }
+      if (e.altKey || o.type === 'image') {
+        // keep aspect ratio: edge drags scale uniformly around the centre,
+        // corner drags lock whichever axis drives the resize
+        const ar = o.w / o.h;
+        if (edgeX) { nh = nw / ar; }
+        else if (edgeY) { nw = nh * ar; }
+        else if (nw / nh > ar) nw = nh * ar; else nh = nw / ar;
+      }
+      // edge drags keep the opposite edge pinned; the centre formula below
+      // already encodes that since the unused sign component is 0
       const ncx = fx + (ux.x * sx * nw + uy.x * sy * nh) / 2;
       const ncy = fy + (ux.y * sx * nw + uy.y * sy * nh) / 2;
       const patch: any = { w: nw, h: nh, x: ncx - nw / 2, y: ncy - nh / 2 };
-      if (o.type === 'text') patch.size = Math.max(1, o.size * (nh / o.h));
+      if (o.type === 'text') {
+        const f = Math.max(nw / o.w, nh / o.h);
+        patch.size = Math.max(1, o.size * f);
+      }
       update(o.id, patch, 'resize');
     }
   };
