@@ -55,6 +55,12 @@ export class BoxEngine {
   private clock = new THREE.Clock();
   private smooth = 0.12;
 
+  /* XYZ view gizmo (screen-space overlay canvas) */
+  private gizmo!: HTMLCanvasElement;
+  private gizmoCtx!: CanvasRenderingContext2D;
+  private gHits: { x: number; y: number; r: number; axis: 'x' | 'y' | 'z'; sign: number }[] = [];
+  private readonly gSize = 118;
+
   constructor(container: HTMLElement, _opts: EngineOpts = {}) {
     this.container = container;
     const w = container.clientWidth || 800;
@@ -70,6 +76,39 @@ export class BoxEngine {
     container.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = 'block';
     this.renderer.domElement.style.touchAction = 'none';
+
+    // XYZ axis gizmo: a small clickable axis triad in the corner that tracks
+    // the orbit camera and snaps views when an axis end is clicked.
+    this.gizmo = document.createElement('canvas');
+    const gz: Partial<CSSStyleDeclaration> = {
+      // top-right, clear of the view buttons and the fold slider along the bottom
+      position: 'absolute', right: '14px', top: '52px', width: this.gSize + 'px', height: this.gSize + 'px',
+      pointerEvents: 'auto', cursor: 'pointer', touchAction: 'none', zIndex: '5',
+    };
+    Object.assign(this.gizmo.style, gz);
+    this.gizmo.className = 'axis-gizmo';
+    this.gizmoCtx = this.gizmo.getContext('2d')!;
+    this.sizeGizmo();
+    container.appendChild(this.gizmo);
+    this.gizmo.addEventListener('pointerdown', (ev) => {
+      const r = this.gizmo.getBoundingClientRect();
+      const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+      let best: (typeof this.gHits)[number] | null = null;
+      for (const h of this.gHits) {
+        if (Math.hypot(mx - h.x, my - h.y) < h.r) best = h;
+      }
+      if (best) this.setAxisView(best.axis, best.sign);
+      else if (Math.hypot(mx - this.gSize / 2, my - this.gSize / 2) < 12) this.setViewAngle('threeq');
+      ev.stopPropagation();
+    });
+    this.gizmo.addEventListener('pointermove', (ev) => {
+      const r = this.gizmo.getBoundingClientRect();
+      const mx = ev.clientX - r.left, my = ev.clientY - r.top;
+      let hot = false;
+      for (const h of this.gHits) if (Math.hypot(mx - h.x, my - h.y) < h.r) hot = true;
+      if (!hot && Math.hypot(mx - this.gSize / 2, my - this.gSize / 2) < 12) hot = true;
+      this.gizmo.style.cursor = hot ? 'pointer' : 'default';
+    });
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(32, w / h, 1, 8000);
@@ -161,6 +200,28 @@ export class BoxEngine {
     const [t, p] = map[name];
     this.targetSph.theta = t; this.targetSph.phi = p;
     this.autoRotate = false;
+  }
+
+  /** Snap the camera to look along a world axis (gizmo click).
+   *  Spherical here is three.js convention: x = r·sinφ·sinθ, y = r·cosφ, z = r·cosφ·cosθ. */
+  setAxisView(axis: 'x' | 'y' | 'z', sign: number) {
+    const map: Record<'x' | 'y' | 'z', [number, number]> = {
+      x: [Math.PI / 2, Math.PI / 2],   // +x: φ=π/2, θ=π/2
+      y: [0, 0],                       // +y: φ=0
+      z: [0, Math.PI / 2],            // +z: φ=π/2, θ=0
+    };
+    const [th, ph] = map[axis];
+    if (axis === 'y' && sign < 0) this.targetSph.set(this.targetSph.radius, Math.PI, th);
+    else if (sign < 0) this.targetSph.set(this.targetSph.radius, Math.PI - ph, th + Math.PI);
+    else this.targetSph.set(this.targetSph.radius, ph, th);
+    this.autoRotate = false;
+  }
+
+  private sizeGizmo() {
+    const dpr = Math.min(devicePixelRatio, 2);
+    this.gizmo.width = this.gSize * dpr;
+    this.gizmo.height = this.gSize * dpr;
+    this.gizmoCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   /* ---------------- build ---------------- */
@@ -447,6 +508,7 @@ export class BoxEngine {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.sizeGizmo();
     if (this.nodes.length) this.frameModel();
   }
 
@@ -471,7 +533,102 @@ export class BoxEngine {
     this.key.target.position.copy(this.center);
     this.key.target.updateMatrixWorld();
     this.renderer.render(this.scene, this.camera);
+    this.drawGizmo();
   };
+
+  /**
+   * Draw the XYZ axis gizmo: project the world axes into camera space, render
+   * the triad (red X / green Y / blue Z) with the viewer-facing end as a long
+   * arrow and the away end as a short stub. Ends are clickable (setAxisView).
+   */
+  private drawGizmo() {
+    const ctx = this.gizmoCtx;
+    const S = this.gSize;
+    ctx.clearRect(0, 0, S, S);
+    const cx = S / 2, cy = S / 2;
+    const R = S / 2 - 18;
+
+    // backing disc so the colored triad and labels read on light and dark scenes alike
+    ctx.beginPath();
+    ctx.arc(cx, cy, S / 2 - 4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(15,19,27,0.40)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.30)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    const camM = this.camera.matrixWorld;
+    const axes = [
+      { name: 'x' as const, color: '#ff5252', v: new THREE.Vector3(1, 0, 0) },
+      { name: 'y' as const, color: '#4cd964', v: new THREE.Vector3(0, 1, 0) },
+      { name: 'z' as const, color: '#4d8bff', v: new THREE.Vector3(0, 0, 1) },
+    ].map((a) => {
+      const v = a.v.transformDirection(camM);
+      return { name: a.name, color: a.color, sx: v.x, sy: -v.y, cz: v.z };
+    });
+    // camera looks down its own -Z, so cz > 0 = axis tip faces the viewer.
+    // Draw away axes first, facing axes last so they sit on top.
+    axes.sort((a, b) => a.cz - b.cz);
+
+    this.gHits = [];
+    const FULL = 0.95, STUB = 0.36;
+    for (const p of axes) {
+      const facing = p.cz > 0;
+      const long = (facing ? FULL : STUB) * R;
+      const short = (facing ? STUB : FULL) * R;
+      const ex = cx + p.sx * long, ey = cy + p.sy * long;   // +axis end
+      const ox = cx - p.sx * short, oy = cy - p.sy * short; // -axis end (faces viewer when +axis points away)
+
+      ctx.globalAlpha = facing ? 1 : 0.55;
+      ctx.strokeStyle = p.color;
+      ctx.fillStyle = p.color;
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+
+      const visible = Math.hypot(p.sx, p.sy) > 0.2;
+      if (visible) {
+        this.gHits.push({ x: ex, y: ey, r: 13, axis: p.name, sign: 1 });
+        this.gHits.push({ x: ox, y: oy, r: 13, axis: p.name, sign: -1 });
+      }
+
+      if (facing && visible) {
+        // arrowhead at the viewer-facing tip
+        const dl = Math.hypot(p.sx, p.sy) || 1;
+        const dx = p.sx / dl, dy = p.sy / dl;
+        const hL = 10, hW = 5;
+        ctx.beginPath();
+        ctx.moveTo(ex + dx * hL, ey + dy * hL);
+        ctx.lineTo(ex - dx * hL * 0.5 - dy * hW, ey - dy * hL * 0.5 + dx * hW);
+        ctx.lineTo(ex - dx * hL * 0.5 + dy * hW, ey - dy * hL * 0.5 - dx * hW);
+        ctx.closePath();
+        ctx.fill();
+        // axis letter, haloed for contrast
+        ctx.font = '700 11px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const lx = ex + dx * 14, ly = ey + dy * 14;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(12,15,20,0.9)';
+        ctx.strokeText(p.name.toUpperCase(), lx, ly);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(p.name.toUpperCase(), lx, ly);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // centre hub — click to reset to the 3/4 view
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(12,15,20,0.75)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
 
   /** High-res still. */
   snapshot(scale = 2, transparent = false): string {
@@ -498,6 +655,7 @@ export class BoxEngine {
     cancelAnimationFrame(this.raf);
     this.tex?.dispose();
     this.pmrem.dispose();
+    this.gizmo?.remove();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

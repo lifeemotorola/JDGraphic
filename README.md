@@ -15,6 +15,8 @@ the render and the print files can never drift apart.
 | **Palette shuffle** | One click recolors every panel, board and liner from a curated palette — the fastest way to explore colour directions |
 | **Studio looks** | Four one-click scene presets (Daylight, Midnight, Warm kraft, Glacier) that set backdrop, lighting and shadows together |
 | **Fold animation** | The Scene tab plays a smooth eased fold/unfold sweep (0–100 %) so clients can watch the carton erect itself |
+| **XYZ axis gizmo** | A clickable axis triad (red X / green Y / blue Z) floats over the 3D preview, tracking the orbit camera — click any axis end to snap to that orthographic view, click the hub to return to the 3/4 view |
+| **8-point image adjustment** | Selected artwork in the dieline session shows eight adjustment points — four corners plus four edge midpoints — so edge drags fine-tune a single dimension for smoother, more precise resizing (images keep aspect ratio) |
 | **Copy SVG for Figma** | Export tab copies the layered dieline SVG straight to the clipboard — paste it into Figma or Illustrator with no file round-trip |
 | **Quick transform** | Selected artwork rotates ±90° or resizes to fill its host panel with one click, from the inspector |
 | **Eco score** | Every blank gets an A–F material-efficiency grade from trim waste, with a bonus for recycled grey/kraft board |
