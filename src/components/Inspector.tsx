@@ -1,5 +1,6 @@
 import { useStore } from '../lib/store';
 import { ColorIn, Field, Group, Icon, I, NumIn, Segmented, Slider } from './ui';
+import ImageEditor from './ImageEditor';
 
 const FONTS = [
   { v: 'Inter, system-ui, sans-serif', l: 'Inter / System' },
@@ -203,14 +204,15 @@ export default function Inspector({ open = false }: { open?: boolean }) {
           )}
 
           {o.type === 'image' && (
-            <Group title="Image">
-              <NumIn label="Corner radius (mm)" value={o.radius} min={0} max={200} step={0.5} onChange={(v) => update(o.id, { radius: v })} />
-              <Field label="Fit"> 
-                <Segmented value={o.fit} options={[{ v: 'cover', l: 'Cover' }, { v: 'contain', l: 'Contain' }, { v: 'stretch', l: 'Stretch' }]}
-                  onChange={(v) => update(o.id, { fit: v })} />
-              </Field>
-              {o.src && <img src={o.src} alt="" style={{ width: '100%', borderRadius: 8, border: '1px solid var(--line)' }} />}
-            </Group>
+            <>
+              <ImageEditor o={o} />
+              {o.src && (
+                <Group title="Source">
+                  <img src={o.src} alt="" style={{ width: '100%', borderRadius: 8, border: '1px solid var(--line)' }} />
+                  <p className="phint">Original placed pixels — edits above never overwrite them.</p>
+                </Group>
+              )}
+            </>
           )}
 
           <Group title="Snap to panel">

@@ -38,7 +38,47 @@ export interface DesignObject {
   // image
   src: string;
   fit: 'cover' | 'contain' | 'stretch';
+  /** non-destructive photo edits (Photoshop-style adjustments) */
+  img: ImageEdits;
 }
+
+/**
+ * Non-destructive raster adjustments applied at draw time, so the 2D artboard,
+ * the 3D texture and every export share exactly one code path.
+ * Percent values are 100 = untouched.
+ */
+export interface ImageEdits {
+  brightness: number;   // %
+  contrast: number;     // %
+  saturation: number;   // %
+  exposure: number;     // -100..100 (screen / multiply wash)
+  hue: number;          // deg
+  blur: number;         // mm
+  sharpen: number;      // 0..100 (unsharp-ish overlay)
+  grayscale: number;    // %
+  sepia: number;        // %
+  invert: number;       // %
+  vignette: number;     // 0..100
+  tint: string;         // hex
+  tintAmt: number;      // 0..100
+  flipH: boolean;
+  flipV: boolean;
+  /** crop insets as a fraction (0..0.9) of the source image */
+  cropT: number; cropR: number; cropB: number; cropL: number;
+}
+
+export const defaultImageEdits = (): ImageEdits => ({
+  brightness: 100, contrast: 100, saturation: 100, exposure: 0, hue: 0,
+  blur: 0, sharpen: 0, grayscale: 0, sepia: 0, invert: 0,
+  vignette: 0, tint: '#ff9a3c', tintAmt: 0, flipH: false, flipV: false,
+  cropT: 0, cropR: 0, cropB: 0, cropL: 0,
+});
+
+/** True when the photo is still exactly as it was imported. */
+export const isPristine = (e: ImageEdits): boolean => {
+  const d = defaultImageEdits();
+  return (Object.keys(d) as (keyof ImageEdits)[]).every((k) => k === 'tint' || e[k] === d[k]);
+};
 
 export interface MaterialDef {
   id: string; name: string; color: string; inner: string;
@@ -101,7 +141,9 @@ export const newObject = (type: ObjType, patch: Partial<DesignObject> = {}): Des
   text: 'Your brand', font: 'Inter, system-ui, sans-serif', size: 9, weight: 700,
   align: 'center', tracking: 0, lineHeight: 1.2,
   src: '', fit: 'cover',
+  img: defaultImageEdits(),
   ...patch,
+  ...(patch.img ? { img: { ...defaultImageEdits(), ...patch.img } } : {}),
 });
 
 interface Store {
