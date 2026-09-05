@@ -1,4 +1,4 @@
-import type { Design } from './store';
+import { defaultImageEdits, type Design, type ImageEdits } from './store';
 import { creaseSegment, panelPoly, type Net, type Panel } from './geometry';
 
 /* ---------------- image cache ---------------- */
@@ -71,6 +71,20 @@ function drawText(ctx: CanvasRenderingContext2D, o: Design['objects'][number]) {
   try { (ctx as unknown as { letterSpacing: string }).letterSpacing = '0px'; } catch { /* ignore */ }
 }
 
+/** CSS filter string for the non-destructive photo edits (mm-aware blur). */
+export function imageFilter(e: ImageEdits, pxPerMm = 1): string {
+  const f: string[] = [];
+  if (e.brightness !== 100) f.push(`brightness(${e.brightness}%)`);
+  if (e.contrast !== 100) f.push(`contrast(${e.contrast}%)`);
+  if (e.saturation !== 100) f.push(`saturate(${e.saturation}%)`);
+  if (e.hue) f.push(`hue-rotate(${e.hue}deg)`);
+  if (e.grayscale) f.push(`grayscale(${e.grayscale}%)`);
+  if (e.sepia) f.push(`sepia(${e.sepia}%)`);
+  if (e.invert) f.push(`invert(${e.invert}%)`);
+  if (e.blur > 0) f.push(`blur(${(e.blur * pxPerMm).toFixed(3)}px)`);
+  return f.length ? f.join(' ') : 'none';
+}
+
 function drawImageObj(ctx: CanvasRenderingContext2D, o: Design['objects'][number], repaint?: () => void) {
   if (o.radius > 0) { roundRect(ctx, 0, 0, o.w, o.h, o.radius); ctx.clip(); }
   const img = getImage(o.src, repaint);
@@ -79,18 +93,89 @@ function drawImageObj(ctx: CanvasRenderingContext2D, o: Design['objects'][number
     ctx.fillRect(0, 0, o.w, o.h);
     return;
   }
-  const ir = img.naturalWidth / img.naturalHeight;
+  const e: ImageEdits = { ...defaultImageEdits(), ...o.img };
+
+  // crop the source rect first — everything downstream sees the cropped photo
+  const cl = Math.min(0.9, Math.max(0, e.cropL));
+  const cr = Math.min(0.9, Math.max(0, e.cropR));
+  const ct = Math.min(0.9, Math.max(0, e.cropT));
+  const cb = Math.min(0.9, Math.max(0, e.cropB));
+  const baseX = img.naturalWidth * cl;
+  const baseY = img.naturalHeight * ct;
+  const baseW = Math.max(1, img.naturalWidth * (1 - cl - cr));
+  const baseH = Math.max(1, img.naturalHeight * (1 - ct - cb));
+
+  const ir = baseW / baseH;
   const br = o.w / o.h;
-  let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
+  let sx = baseX, sy = baseY, sw = baseW, sh = baseH;
   let dx = 0, dy = 0, dw = o.w, dh = o.h;
   if (o.fit === 'cover') {
-    if (ir > br) { sw = img.naturalHeight * br; sx = (img.naturalWidth - sw) / 2; }
-    else { sh = img.naturalWidth / br; sy = (img.naturalHeight - sh) / 2; }
+    if (ir > br) { sw = baseH * br; sx = baseX + (baseW - sw) / 2; }
+    else { sh = baseW / br; sy = baseY + (baseH - sh) / 2; }
   } else if (o.fit === 'contain') {
     if (ir > br) { dh = o.w / ir; dy = (o.h - dh) / 2; }
     else { dw = o.h * ir; dx = (o.w - dw) / 2; }
   }
+
+  // approximate device scale so blur reads the same at any zoom / export dpi
+  const m = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+  const pxPerMm = m ? Math.max(0.001, Math.hypot(m.a, m.b)) : 1;
+
+  ctx.save();
+  const filter = imageFilter(e, 1);
+  if (filter !== 'none') {
+    try { ctx.filter = imageFilter(e, pxPerMm); } catch { /* no filter support */ }
+  }
+  if (e.flipH || e.flipV) {
+    ctx.translate(e.flipH ? o.w : 0, e.flipV ? o.h : 0);
+    ctx.scale(e.flipH ? -1 : 1, e.flipV ? -1 : 1);
+  }
   ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+  ctx.restore();
+
+  // sharpen: cheap high-pass — the blurred copy lightened over the original
+  if (e.sharpen > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.globalAlpha = Math.min(1, e.sharpen / 140);
+    const base = imageFilter(e, pxPerMm);
+    try { ctx.filter = `${base === 'none' ? '' : base} blur(${Math.max(0.6, pxPerMm * 0.25).toFixed(2)}px) contrast(180%)`.trim(); } catch { /* ignore */ }
+    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+    ctx.restore();
+  }
+
+  // exposure wash
+  if (e.exposure !== 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = e.exposure > 0 ? 'screen' : 'multiply';
+    ctx.globalAlpha = Math.min(0.85, Math.abs(e.exposure) / 130);
+    ctx.fillStyle = e.exposure > 0 ? '#ffffff' : '#000000';
+    ctx.fillRect(dx, dy, dw, dh);
+    ctx.restore();
+  }
+
+  // colour tint (photo filter)
+  if (e.tintAmt > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'color';
+    ctx.globalAlpha = Math.min(1, e.tintAmt / 100);
+    ctx.fillStyle = e.tint || '#ff9a3c';
+    ctx.fillRect(dx, dy, dw, dh);
+    ctx.restore();
+  }
+
+  // vignette
+  if (e.vignette > 0) {
+    const cx = dx + dw / 2, cy = dy + dh / 2;
+    const r = Math.hypot(dw, dh) / 2;
+    const g = ctx.createRadialGradient(cx, cy, r * 0.35, cx, cy, r);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, `rgba(0,0,0,${Math.min(0.95, e.vignette / 100)})`);
+    ctx.save();
+    ctx.fillStyle = g;
+    ctx.fillRect(dx, dy, dw, dh);
+    ctx.restore();
+  }
 }
 
 export function drawObject(ctx: CanvasRenderingContext2D, o: Design['objects'][number], repaint?: () => void) {

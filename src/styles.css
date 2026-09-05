@@ -664,3 +664,26 @@ kbd { font-family: var(--mono); font-size: 10.5px; background: var(--bg-3); bord
 }
 .art-grid button:hover { border-color: var(--acc); transform: translateY(-1px); }
 .art-grid img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ---------- photo editor (right panel) ---------- */
+.imgfx-stage {
+  position: relative; border-radius: 10px; overflow: hidden;
+  border: 1px solid var(--line);
+  background: repeating-conic-gradient(#e8e8ec 0% 25%, #fff 0% 50%) 0 0 / 12px 12px;
+}
+.imgfx-preview { display: block; width: 100%; height: auto; aspect-ratio: 244 / 150; }
+.imgfx-badge {
+  position: absolute; left: 8px; top: 8px; padding: 2px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  background: rgba(10, 12, 16, .68); color: #fff; backdrop-filter: blur(4px);
+}
+.imgfx-badge.on { background: rgba(61, 220, 151, .9); color: #0b1a13; }
+.fx-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+.fx-chip {
+  height: 28px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg-3);
+  color: var(--txt-2); font-size: 11px; font-weight: 700; cursor: pointer;
+}
+.fx-chip:hover { color: var(--txt); border-color: var(--acc); }
+.pgroup .ptitle .mini { width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center; color: var(--txt-3); }
+.pgroup .ptitle .mini:hover { color: var(--txt); background: var(--line); }
+.pgroup .ptitle .mini.on { color: var(--acc-2); background: var(--line); }
