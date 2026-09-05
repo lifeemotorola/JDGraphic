@@ -124,6 +124,42 @@ export default function Inspector({ open = false }: { open?: boolean }) {
               <button className="ebtn" onClick={() => reorder(o.id, 'front')}>Bring front</button>
               <button className="ebtn" onClick={() => reorder(o.id, 'back')}>Send back</button>
             </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button
+                className="ebtn"
+                title="Rotate 90° counter-clockwise"
+                onClick={() => update(o.id, { rot: ((o.rot - 90 + 540) % 360) - 180 })}
+              >
+                Rotate −90°
+              </button>
+              <button
+                className="ebtn"
+                title="Rotate 90° clockwise"
+                onClick={() => update(o.id, { rot: ((o.rot + 90 + 540) % 360) - 180 })}
+              >
+                Rotate +90°
+              </button>
+            </div>
+            <div className="row" style={{ marginTop: 8 }}>
+              <button
+                className="ebtn"
+                title="Resize this element to fill the panel it sits on, with a small margin"
+                onClick={() => {
+                  const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+                  const host = net.panels.find((p) =>
+                    p.kind === 'panel' && cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h)
+                    ?? net.byId['front'] ?? net.root;
+                  const m = Math.min(host.w, host.h) * 0.08;
+                  const patch: Record<string, number> = {
+                    x: host.x + m, y: host.y + m, w: host.w - m * 2, h: host.h - m * 2,
+                  };
+                  if (o.type === 'text' && o.h > 0) patch.size = Math.max(1, o.size * (patch.h / o.h));
+                  update(o.id, patch);
+                }}
+              >
+                Fit to panel
+              </button>
+            </div>
           </Group>
 
           {o.type === 'text' && (

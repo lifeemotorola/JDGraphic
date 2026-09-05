@@ -11,7 +11,14 @@ the render and the print files can never drift apart.
 
 | | |
 |---|---|
-| **220 templates** | Editable starting points across 22 categories—from beauty and food to fashion, travel, office, art and craft, sports, hardware and games—searchable and filterable in the studio |
+| **470 templates** | Editable starting points across 22 categories—from beauty and food to fashion, travel, office, art and craft, sports, hardware and games—searchable and filterable in the studio. Star any template as a favorite (★) and find it under the Favorites chip |
+| **Palette shuffle** | One click recolors every panel, board and liner from a curated palette — the fastest way to explore colour directions |
+| **Studio looks** | Four one-click scene presets (Daylight, Midnight, Warm kraft, Glacier) that set backdrop, lighting and shadows together |
+| **Fold animation** | The Scene tab plays a smooth eased fold/unfold sweep (0–100 %) so clients can watch the carton erect itself |
+| **Copy SVG for Figma** | Export tab copies the layered dieline SVG straight to the clipboard — paste it into Figma or Illustrator with no file round-trip |
+| **Quick transform** | Selected artwork rotates ±90° or resizes to fill its host panel with one click, from the inspector |
+| **Eco score** | Every blank gets an A–F material-efficiency grade from trim waste, with a bonus for recycled grey/kraft board |
+| **Favicon & PWA** | Branded BoxCraft app icon, theme colour, social preview tags and a web manifest so the studio installs like an app |
 | **My templates** | Save any design as your own reusable template — stored in the browser, editable, duplicable, and portable through a `.json` library file |
 | **7 structures** | Straight/Reverse Tuck End, Seal End, Regular Slotted Carton, Roll End Mailer, Sleeve, Open Tray |
 | **Parametric dielines** | Cut / crease / bleed / safe-area generated from L × W × H, caliper and glue-flap width |

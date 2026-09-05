@@ -50,6 +50,8 @@ export const I = {
   distV: 'M5 5h14v3H5z|M5 10.5h14v3H5z|M5 16h14v3H5z',
   front: 'M4 5h16v14H4z',
   cube: 'M21 16V8l-9-5-9 5v8l9 5 9-5z|M3.3 7.3 12 12l8.7-4.7|M12 12v9',
+  star: 'M12 2.5l2.95 5.98 6.6.96-4.78 4.66 1.13 6.58L12 17.56l-5.9 3.1 1.13-6.57L2.45 9.44l6.6-.96L12 2.5z',
+  leaf: 'M5 19C5 9 13 4 20 4c0 8-5 15-15 15z|M5 19c3-5 7-9 11-11',
 };
 
 export function Field({ label, hint, children }: { label?: string; hint?: string; children: React.ReactNode }) {

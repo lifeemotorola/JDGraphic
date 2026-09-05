@@ -28,6 +28,16 @@ const builtDesign = (t: Template) => {
 const match = (q: string, ...fields: string[]) =>
   !q || fields.join(' ').toLowerCase().includes(q.toLowerCase().trim());
 
+/** Starred built-in templates, kept in this browser only. */
+const FAV_KEY = 'boxcraft.favs.v1';
+const FAV_CAT = '★ Favorites';
+const readFavs = (): string[] => {
+  try {
+    const v = JSON.parse(localStorage.getItem(FAV_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch { return []; }
+};
+
 /* ========================= save / rename dialog ========================= */
 
 export function SaveTemplateDialog({ toast }: { toast: (m: string) => void }) {
@@ -155,7 +165,14 @@ export function TemplateBrowser({ onClose, onLoad, initialSource = 'built' }: {
   const [q, setQ] = useState('');
   const [confirm, setConfirm] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const [favs, setFavs] = useState<string[]>(readFavs);
   const file = useRef<HTMLInputElement>(null);
+
+  const toggleFav = (id: string) => setFavs((f) => {
+    const nx = f.includes(id) ? f.filter((x) => x !== id) : [...f, id];
+    try { localStorage.setItem(FAV_KEY, JSON.stringify(nx)); } catch { /* private mode */ }
+    return nx;
+  });
 
   useEffect(() => { setCat('All'); setConfirm(null); }, [src]);
   useEffect(() => {
@@ -165,10 +182,19 @@ export function TemplateBrowser({ onClose, onLoad, initialSource = 'built' }: {
   }, [onClose]);
 
   const pool: (Template | UserTemplate)[] = src === 'built' ? TEMPLATES : items;
-  const cats = ['All', ...Array.from(new Set(pool.map((t) => t.category)))];
+  const cats = src === 'built'
+    ? ['All', FAV_CAT, ...Array.from(new Set(pool.map((t) => t.category)))]
+    : ['All', ...Array.from(new Set(pool.map((t) => t.category)))];
   const searched = pool.filter((t) => match(q, t.name, t.blurb, t.category));
-  const list = cat === 'All' ? searched : searched.filter((t) => t.category === cat);
-  const countIn = (c: string) => (c === 'All' ? searched.length : searched.filter((t) => t.category === c).length);
+  const list = cat === 'All'
+    ? searched
+    : cat === FAV_CAT
+      ? searched.filter((t) => favs.includes(t.id))
+      : searched.filter((t) => t.category === cat);
+  const countIn = (c: string) =>
+    c === 'All' ? searched.length
+    : c === FAV_CAT ? searched.filter((t) => favs.includes(t.id)).length
+    : searched.filter((t) => t.category === c).length;
 
   const libBytes = useMemo(() => items.reduce((n, t) => n + templateBytes(t), 0), [items]);
 
@@ -278,24 +304,54 @@ export function TemplateBrowser({ onClose, onLoad, initialSource = 'built' }: {
             </div>
           )}
 
-          {!!pool.length && !list.length && (
+          {src === 'built' && cat === FAV_CAT && !favs.length && (
+            <div className="lib-empty">
+              <div className="lib-empty-ico"><Icon d={I.star} size={22} /></div>
+              <h4>No favorites yet</h4>
+              <p>Tap the ★ on any template card and it will wait for you here — stored in this browser.</p>
+            </div>
+          )}
+
+          {!!pool.length && !list.length && !(src === 'built' && cat === FAV_CAT && !favs.length) && (
             <div className="lib-empty"><h4>No matches</h4><p>Nothing here for “{q}”. Try another word or clear the filters.</p></div>
           )}
 
           <div className="tpl-grid">
-            {src === 'built' && (list as Template[]).map((t) => (
-              <button key={t.id} onClick={() => onLoad(applyTemplate(t), t.name)}>
-                <BoxThumb design={builtDesign(t)} h={132} bg="#e9edf3" />
-                <div className="tb">
-                  <b>{t.name}</b>
-                  <span>{t.blurb}</span>
-                  <div className="tb-meta">
-                    <span className="tb-tag">{boxTypeById(t.boxType).short}</span>
-                    <span>{t.dims.join(' × ')} mm</span>
-                  </div>
+            {src === 'built' && (list as Template[]).map((t) => {
+              const fav = favs.includes(t.id);
+              return (
+                <div key={t.id} className="lib-card" style={{ position: 'relative' }}>
+                  <button className="lib-open" onClick={() => onLoad(applyTemplate(t), t.name)}>
+                    <BoxThumb design={builtDesign(t)} h={132} bg="#e9edf3" />
+                    <div className="tb">
+                      <b>{t.name}</b>
+                      <span>{t.blurb}</span>
+                      <div className="tb-meta">
+                        <span className="tb-tag">{boxTypeById(t.boxType).short}</span>
+                        <span>{t.dims.join(' × ')} mm</span>
+                      </div>
+                    </div>
+                  </button>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title={fav ? 'Remove from favorites' : 'Star as favorite'}
+                    onClick={(e) => { e.stopPropagation(); toggleFav(t.id); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFav(t.id); } }}
+                    style={{
+                      position: 'absolute', top: 8, right: 8, width: 30, height: 30,
+                      borderRadius: 9, display: 'grid', placeItems: 'center', fontSize: 16,
+                      cursor: 'pointer', userSelect: 'none',
+                      background: 'rgba(12,14,19,.62)', backdropFilter: 'blur(6px)',
+                      border: '1px solid rgba(255,255,255,.16)',
+                      color: fav ? '#f4b942' : 'rgba(255,255,255,.75)',
+                    }}
+                  >
+                    ★
+                  </span>
                 </div>
-              </button>
-            ))}
+              );
+            })}
 
             {src === 'mine' && (list as UserTemplate[]).map((t) => (
               <div className={`lib-card${confirm === t.id ? ' danger' : ''}`} key={t.id}>
