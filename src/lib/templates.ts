@@ -1,5 +1,6 @@
 import { buildNet, boxTypeById, type BoxTypeId, type Net } from './geometry';
 import { newObject, startDesign, type Design, type DesignObject } from './store';
+import { PHOTO_TEMPLATES } from './photoTemplates';
 
 /** place an object on a panel using fractional coords */
 function on(net: Net, panelId: string, rx: number, ry: number, rw: number, rh: number) {
@@ -2677,6 +2678,7 @@ export const TEMPLATES: Template[] = [
     }),
   },
   ...CATALOG_TEMPLATES,
+  ...PHOTO_TEMPLATES,
 ];
 
 export function applyTemplate(t: Template): Design {
