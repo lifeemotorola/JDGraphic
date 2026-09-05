@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   BOX_TYPES, boxTypeById, netMetrics, type BoxTypeId,
 } from '../lib/geometry';
@@ -15,6 +15,52 @@ import {
 import type { BoxEngine } from '../three/engine';
 
 const mmIn = (mm: number, u: 'mm' | 'in') => (u === 'mm' ? mm : mm / 25.4);
+
+/* ============================ ECO SCORE ============================ */
+/** Material-efficiency grade derived from trim waste, with a bonus for
+ *  recycled substrates. Pure presentation — no geometry changes. */
+function EcoScore({ waste, recycled }: { waste: number; recycled: boolean }) {
+  const pct = Math.round(waste * 100);
+  const base = pct <= 25 ? 0 : pct <= 35 ? 1 : pct <= 45 ? 2 : pct <= 55 ? 3 : 4;
+  const idx = Math.max(0, base - (recycled ? 1 : 0));
+  const grades = [
+    { g: 'A', c: '#3ddc97', label: 'Excellent nesting' },
+    { g: 'B', c: '#a3e635', label: 'Good nesting' },
+    { g: 'C', c: '#f4b942', label: 'Average nesting' },
+    { g: 'D', c: '#f08c4b', label: 'Wasteful blank' },
+    { g: 'F', c: '#ef534f', label: 'Reshape recommended' },
+  ];
+  const cur = grades[idx];
+  return (
+    <div style={{
+      marginTop: 12, borderRadius: 10, padding: '10px 12px',
+      background: 'rgba(61,220,151,.07)', border: '1px solid var(--line)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <span style={{
+          width: 30, height: 30, borderRadius: 9, display: 'grid', placeItems: 'center',
+          background: cur.c, color: '#10130f', fontWeight: 800, fontSize: 15, flex: 'none',
+        }}>{cur.g}</span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, fontWeight: 700, color: 'var(--txt)' }}>
+            <Icon d={I.leaf} size={13} /> Eco score · {cur.label}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--txt-3)', marginTop: 1 }}>
+            {pct}% trim waste{recycled ? ' · recycled board bonus applied' : ' · switch to recycled grey/kraft for +1 grade'}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 4, marginTop: 9 }}>
+        {grades.map((s, i) => (
+          <div key={s.g} title={`${s.g} — ${s.label}`} style={{
+            flex: 1, height: 6, borderRadius: 4,
+            background: i <= idx ? s.c : 'var(--line-2)', opacity: i <= idx ? 1 : 0.45,
+          }} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /* ============================ STRUCTURE ============================ */
 export function StructurePanel() {
@@ -87,6 +133,7 @@ export function StructurePanel() {
         <div className="metric"><span>Blank weight</span><b>{met.weight.toFixed(1)} g</b></div>
         <div className="metric"><span>Internal volume</span><b>{met.volumeL.toFixed(2)} L</b></div>
         <div className="metric"><span>Panels / creases</span><b>{met.panels} / {met.panels - 1}</b></div>
+        <EcoScore waste={met.waste} recycled={design.materialId === 'grey' || design.materialId === 'kraft'} />
       </Group>
 
       <Group title="Instant quote">
@@ -192,7 +239,28 @@ export function DesignPanel({ selectedPanel }: { selectedPanel: string | null })
         <ColorIn label="Inside liner" value={design.innerColor} onChange={(v) => commit((d) => { d.innerColor = v; }, 'ic')} />
       </Group>
 
-      <Group title="Palettes">
+      <Group
+        title="Palettes"
+        right={(
+          <button
+            className="link-mini"
+            title="Recolour every panel from a random curated palette"
+            onClick={() => {
+              const p = PALETTES[Math.floor(Math.random() * PALETTES.length)];
+              commit((d) => {
+                d.boardColor = p.colors[0];
+                d.innerColor = p.colors[p.colors.length - 1];
+                const panels = net.panels.filter((x) => x.kind === 'panel');
+                panels.forEach((x, i) => { d.panelFills[x.id] = p.colors[i % p.colors.length]; });
+              });
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Icon d={I.shuffle} size={11} /> Shuffle
+            </span>
+          </button>
+        )}
+      >
         {PALETTES.map((p) => (
           <div key={p.name} style={{ marginBottom: 10 }}>
             <div className="flabel"><span>{p.name}</span></div>
@@ -291,11 +359,65 @@ export function MaterialPanel() {
 /* ============================ SCENE ============================ */
 const BGS = ['#eceff3', '#ffffff', '#f4ece3', '#dfe7f2', '#1c1f26', '#0d0f14', '#e8e3f5', '#e6f0ea'];
 
+const STUDIO_LOOKS = [
+  { name: 'Daylight', bg: '#eceff3', studio: 'softbox', shadow: true, chip: 'linear-gradient(135deg,#f4f6fa,#cfd6e2)' },
+  { name: 'Midnight', bg: '#141821', studio: 'contrast', shadow: true, chip: 'linear-gradient(135deg,#232a36,#0b0e13)' },
+  { name: 'Warm kraft', bg: '#f4ece3', studio: 'warm', shadow: true, chip: 'linear-gradient(135deg,#faf0e0,#e3cfae)' },
+  { name: 'Glacier', bg: '#dfe7f2', studio: 'cool', shadow: false, chip: 'linear-gradient(135deg,#eef4fc,#b9cbe4)' },
+] as const;
+
 export function ScenePanel() {
   const design = useStore((s) => s.design);
   const commit = useStore((s) => s.commit);
+  const raf = useRef(0);
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+
+  /** Smoothly sweep the fold slider 0↔100% with easing (single undo step). */
+  const playFold = () => {
+    cancelAnimationFrame(raf.current);
+    const from = useStore.getState().design.scene.fold;
+    const to = from > 0.5 ? 0 : 1;
+    const t0 = performance.now();
+    const dur = 1500;
+    setPlaying(true);
+    const tick = (t: number) => {
+      const k = Math.min(1, (t - t0) / dur);
+      const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+      const v = from + (to - from) * e;
+      useStore.getState().commit((d) => { d.scene.fold = Math.round(v * 100) / 100; }, 'foldanim');
+      if (k < 1) raf.current = requestAnimationFrame(tick);
+      else setPlaying(false);
+    };
+    raf.current = requestAnimationFrame(tick);
+  };
+
   return (
     <>
+      <Group title="Studio looks">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {STUDIO_LOOKS.map((l) => {
+            const on = design.scene.bg.toLowerCase() === l.bg;
+            return (
+              <button
+                key={l.name}
+                className={`mat-card${on ? ' on' : ''}`}
+                style={{ marginBottom: 0 }}
+                title={`${l.name}: ${l.studio} light, shadow ${l.shadow ? 'on' : 'off'}`}
+                onClick={() => commit((d) => {
+                  d.scene.bg = l.bg;
+                  d.scene.studio = l.studio;
+                  d.scene.shadow = l.shadow;
+                })}
+              >
+                <div className="mat-chip" style={{ background: l.chip }} />
+                <div><b>{l.name}</b><span>{l.studio} · {l.shadow ? 'shadow' : 'no shadow'}</span></div>
+              </button>
+            );
+          })}
+        </div>
+        <p className="phint">One click sets backdrop, lighting and shadows together — still fully tweakable below.</p>
+      </Group>
       <Group title="Lighting">
         <Segmented value={design.scene.studio}
           options={[{ v: 'softbox', l: 'Softbox' }, { v: 'contrast', l: 'Contrast' }, { v: 'warm', l: 'Warm' }, { v: 'cool', l: 'Cool' }]}
@@ -312,6 +434,10 @@ export function ScenePanel() {
         <ColorIn value={design.scene.bg} onChange={(v) => commit((d) => { d.scene.bg = v; }, 'bg')} />
       </Group>
       <Group title="Motion">
+        <button className="ebtn" style={{ width: '100%', justifyContent: 'center', marginBottom: 12 }} onClick={playFold}>
+          <Icon d={playing ? I.pause : I.play} size={13} />
+          {playing ? 'Folding…' : design.scene.fold > 0.5 ? 'Play unfold animation' : 'Play fold animation'}
+        </button>
         <Slider label="Fold state" value={design.scene.fold} min={0} max={1} step={0.01} onChange={(v) => commit((d) => { d.scene.fold = v; }, 'fold')} />
         <Segmented value={design.scene.autoRotate ? 'on' : 'off'}
           options={[{ v: 'on', l: 'Auto spin' }, { v: 'off', l: 'Manual' }]}
@@ -359,6 +485,16 @@ export function ExportPanel({ engine, toast }: { engine: React.MutableRefObject<
             onClick={() => run('SVG dieline', () => download(`${slug(design.name)}-dieline.svg`,
               new Blob([dielineSVG(net, design)], { type: 'image/svg+xml' })))}>
             <Icon d={I.file} size={13} /> Dieline SVG (cut + crease layers)
+          </button>
+          <button className="ebtn" disabled={!!busy} onClick={async () => {
+            setBusy('Copy SVG');
+            try {
+              await navigator.clipboard.writeText(dielineSVG(net, design));
+              toast('SVG dieline copied — paste it straight into Figma');
+            } catch { toast('Copy is blocked in this frame — download the SVG instead'); }
+            finally { setBusy(''); }
+          }}>
+            <Icon d={I.copy} size={13} /> Copy dieline SVG for Figma
           </button>
           <button className="ebtn" disabled={!!busy}
             onClick={() => run('Print PDF', () => exportPrintPDF(design, net, { art: true, marks: true, dpi: parseInt(dpi) }))}>
