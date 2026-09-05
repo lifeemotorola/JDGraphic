@@ -7,6 +7,8 @@ import {
 } from '../lib/store';
 import { PALETTES, TEMPLATES, applyTemplate } from '../lib/templates';
 import { templateDesign, templateSwatch, useLibrary } from '../lib/library';
+import { ART, artSrc } from '../lib/art';
+import { QR_DEFAULTS, QR_STYLE_META, qrDataURL, type QRStyle } from '../lib/qr';
 import { ColorIn, Field, Group, Icon, I, NumIn, Segmented, Slider, Swatches } from './ui';
 import { NetThumb } from './Thumb';
 import {
@@ -151,6 +153,105 @@ export function StructurePanel() {
   );
 }
 
+/* ============================ QR STUDIO ============================ */
+/** Three scannable-code options — Classic, Rounded and Branded — rendered
+ *  by the built-in ISO 18004 encoder and dropped on the artboard as a
+ *  crisp PNG image layer. */
+function QRStudio({ place, add }: {
+  place: (fw: number, fh: number) => { x: number; y: number; w: number; h: number };
+  add: (o: DesignObject) => void;
+}) {
+  const [text, setText] = useState('https://boxcraft.studio');
+  const [style, setStyle] = useState<QRStyle>('classic');
+  const [fg, setFg] = useState(QR_DEFAULTS.classic.fg);
+  const [bg, setBg] = useState(QR_DEFAULTS.classic.bg);
+  const [sizeMm, setSizeMm] = useState(24);
+
+  const preview = useMemo(() => {
+    if (!text.trim()) return null;
+    try {
+      return qrDataURL(text.trim(), { style, fg, bg, quiet: 4, px: 10, label: 'BC' });
+    } catch { return null; }
+  }, [text, style, fg, bg]);
+
+  const pick = (s: QRStyle) => {
+    setStyle(s);
+    setFg(QR_DEFAULTS[s].fg);
+    setBg(QR_DEFAULTS[s].bg);
+  };
+
+  const submit = () => {
+    if (!preview) return;
+    const p = place(0.4, 0.4);
+    const side = Math.min(sizeMm, 200);
+    add(newObject('image', {
+      src: qrDataURL(text.trim(), { style, fg, bg, quiet: 4, px: 16, label: 'BC' }),
+      name: `QR · ${QR_STYLE_META[style].name}`,
+      x: p.x + (p.w - side) / 2, y: p.y + (p.h - side) / 2, w: side, h: side,
+      fit: 'contain',
+    }));
+  };
+
+  return (
+    <Group title="QR code" right={
+      <Segmented value={style}
+        options={(Object.keys(QR_STYLE_META) as QRStyle[]).map((s) => ({ v: s, l: QR_STYLE_META[s].name }))}
+        onChange={pick} />
+    }>
+      <Field label="Encoded content">
+        <input className="inp" value={text} spellCheck={false}
+          placeholder="https://…" onChange={(e) => setText(e.target.value)} />
+      </Field>
+      <p className="phint">{QR_STYLE_META[style].blurb}</p>
+      <div className="grid2">
+        <ColorIn label="Modules" value={fg} onChange={setFg} />
+        <ColorIn label="Ground" value={bg} onChange={setBg} />
+      </div>
+      <Slider label="Size on carton" value={sizeMm} min={10} max={80} step={1} unit=" mm" onChange={setSizeMm} />
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{
+          width: 84, height: 84, flex: 'none', borderRadius: 10, border: '1px solid var(--line)',
+          background: 'repeating-conic-gradient(#e8e8ec 0% 25%, #fff 0% 50%) 0 0 / 12px 12px',
+          display: 'grid', placeItems: 'center', padding: 6,
+        }}>
+          {preview && <img src={preview} alt="QR preview" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />}
+        </div>
+        <div style={{ flex: 1 }}>
+          <button className="ebtn" style={{ width: '100%' }} disabled={!preview} onClick={submit}>
+            <Icon d={I.zap} size={13} /> Add QR to artwork
+          </button>
+          <p className="phint">{preview ? `Scannable · ECC ${style === 'classic' ? 'M' : 'H'} · quiet zone 4` : 'Text is too long for a printable code.'}</p>
+        </div>
+      </div>
+    </Group>
+  );
+}
+
+/* ============================ ART LIBRARY ============================ */
+/** Curated internet photography, vendored into the app. One click drops a
+ *  photo onto the targeted panel. */
+function ArtLibrary({ place, add }: {
+  place: (fw: number, fh: number) => { x: number; y: number; w: number; h: number };
+  add: (o: DesignObject) => void;
+}) {
+  return (
+    <Group title="Photo art library" right={<span className="link-mini">{ART.length} curated shots</span>}>
+      <div className="art-grid">
+        {ART.map((a) => (
+          <button key={a.id} title={`${a.name} · ${a.credit}`}
+            onClick={() => {
+              const p = place(0.62, 0.5);
+              add(newObject('image', { src: artSrc(a.id), name: a.name.slice(0, 18), ...p, fit: 'cover' }));
+            }}>
+            <img src={artSrc(a.id)} alt={a.name} loading="lazy" />
+          </button>
+        ))}
+      </div>
+      <p className="phint">Bundled placeholder photography for exploration — swap in licensed art before print.</p>
+    </Group>
+  );
+}
+
 /* ============================ DESIGN ============================ */
 export function DesignPanel({ selectedPanel }: { selectedPanel: string | null }) {
   const design = useStore((s) => s.design);
@@ -216,6 +317,9 @@ export function DesignPanel({ selectedPanel }: { selectedPanel: string | null })
         <input ref={file} type="file" accept="image/*" hidden onChange={(e) => onFile(e.target.files?.[0])} />
         <p className="phint">New elements land on the selected panel. Click a panel in the dieline to target it.</p>
       </Group>
+
+      <QRStudio place={place} add={add} />
+      <ArtLibrary place={place} add={add} />
 
       <Group title={panel ? `Panel fill · ${panel.label}` : 'Panel fill'}>
         {panel ? (

@@ -72,6 +72,7 @@ function drawText(ctx: CanvasRenderingContext2D, o: Design['objects'][number]) {
 }
 
 function drawImageObj(ctx: CanvasRenderingContext2D, o: Design['objects'][number], repaint?: () => void) {
+  if (o.radius > 0) { roundRect(ctx, 0, 0, o.w, o.h, o.radius); ctx.clip(); }
   const img = getImage(o.src, repaint);
   if (!img) {
     ctx.fillStyle = 'rgba(120,130,145,0.25)';

@@ -204,7 +204,8 @@ export default function Inspector({ open = false }: { open?: boolean }) {
 
           {o.type === 'image' && (
             <Group title="Image">
-              <Field label="Fit">
+              <NumIn label="Corner radius (mm)" value={o.radius} min={0} max={200} step={0.5} onChange={(v) => update(o.id, { radius: v })} />
+              <Field label="Fit"> 
                 <Segmented value={o.fit} options={[{ v: 'cover', l: 'Cover' }, { v: 'contain', l: 'Contain' }, { v: 'stretch', l: 'Stretch' }]}
                   onChange={(v) => update(o.id, { fit: v })} />
               </Field>

@@ -11,7 +11,7 @@ the render and the print files can never drift apart.
 
 | | |
 |---|---|
-| **470 templates** | Editable starting points across 22 categories—from beauty and food to fashion, travel, office, art and craft, sports, hardware and games—searchable and filterable in the studio. Star any template as a favorite (★) and find it under the Favorites chip |
+| **520 templates** | Editable starting points across 22 categories—from beauty and food to fashion, travel, office, art and craft, sports, hardware and games—searchable and filterable in the studio. Includes 50 photo-led *Photo Editions* built on the bundled art library. Star any template as a favorite (★) and find it under the Favorites chip |
 | **Palette shuffle** | One click recolors every panel, board and liner from a curated palette — the fastest way to explore colour directions |
 | **Studio looks** | Four one-click scene presets (Daylight, Midnight, Warm kraft, Glacier) that set backdrop, lighting and shadows together |
 | **Fold animation** | The Scene tab plays a smooth eased fold/unfold sweep (0–100 %) so clients can watch the carton erect itself |
@@ -26,6 +26,9 @@ the render and the print files can never drift apart.
 | **Arrange tools** | Multi-select layers (⌘/Ctrl adds, Shift selects a run, *Select all*), then align left/centre/right, top/middle/bottom, or distribute horizontally/vertically in one undo step |
 | **Session autosave** | The working design is quietly saved after every change and the home page offers *Continue where you left off* — refresh or close a tab and your carton is still there. A *New carton* button in the editor bar starts clean and clears the saved session |
 | **Template picker** | Searchable by category in the studio — plus a *Surprise me* button that drops a random built-in design straight onto the artboard |
+| **QR codes, three ways** | Built-in ISO 18004 encoder (byte mode, v1–10, ECC L–H) with three scannable options — *Classic* square modules, *Rounded* dot modules, *Branded* with a centred logo plate. Live preview in the Design tab, dropped on the artboard as a crisp print-resolution layer; several Photo Editions carry one on the back panel |
+| **Photo art library** | 38 curated photographs vendored into `public/art/` — one click drops a shot onto the targeted panel. Same-origin pixels keep every export untainted and the studio fully offline. Photos are placeholder art: swap in licensed imagery before print |
+| **Image corner radius** | Image layers accept a corner radius (capsule at max) in the inspector, used by the photo templates for window and medallion crops |
 | **Real-time 3D** | Panel-by-panel fold animation (0–100 %), orbit, board substrates, finishes, studio lighting and shadows |
 | **Exports** | Layered dieline SVG, print-ready PDF (bleed + registration marks), vector dieline PDF, 300 dpi flat artwork PNG, transparent 2× render PNG, `.boxcraft.json` project |
 | **Manufacturing spec sheet** | One-page PDF: structure, board, flat sheet size, board area and waste, blank weight, internal volume, bleed/glue, plus dieline and render thumbnails |
