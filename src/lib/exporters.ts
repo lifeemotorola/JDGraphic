@@ -2,6 +2,7 @@ import type { Design } from './store';
 import { materialById } from './store';
 import { creaseSegment, netMetrics, panelPoly, type Net } from './geometry';
 import { drawArtwork, drawDieline, preloadAll } from './render2d';
+import { chooseSheet, SHEET_MARGIN, type SheetChoice } from './sheets';
 
 /**
  * True when the studio is running inside an iframe. Embedded previews are
@@ -103,50 +104,112 @@ export async function exportArtworkPNG(design: Design, net: Net, dpi = 300) {
 
 /* ----------------------------- PDF ----------------------------- */
 
-export async function exportPrintPDF(design: Design, net: Net, opts: { art: boolean; marks: boolean; dpi?: number }) {
+/** Quarter-turn a canvas clockwise, for blanks that sit better across the sheet. */
+function rotateCanvasCW(c: HTMLCanvasElement): HTMLCanvasElement {
+  const out = document.createElement('canvas');
+  out.width = c.height;
+  out.height = c.width;
+  const ctx = out.getContext('2d')!;
+  ctx.translate(out.width / 2, out.height / 2);
+  ctx.rotate(Math.PI / 2);
+  ctx.drawImage(c, -c.width / 2, -c.height / 2);
+  return out;
+}
+
+/**
+ * Print-ready PDF on a real press sheet. The studio chooses the sheet (A4
+ * landscape as the floor, stepping up to A3, SRA3, A2 … for bigger blanks),
+ * centres the bleed box on it and adds crop marks plus the dieline overlay.
+ * Passing `opts.sheet` overrides the automatic choice.
+ */
+export async function exportPrintPDF(design: Design, net: Net, opts: { art: boolean; marks: boolean; dpi?: number; sheet?: SheetChoice }) {
   const b = net.bounds;
   const bleed = design.params.bleed;
-  const pad = bleed + 10;
-  const W = b.w + pad * 2;
-  const H = b.h + pad * 2;
+  const sheet = opts.sheet ?? chooseSheet(net, design);
   const { jsPDF } = await import('jspdf');
-  const pdf = new jsPDF({ unit: 'mm', format: [W, H], orientation: W > H ? 'landscape' : 'portrait', compress: true });
-  const ox = -b.x + pad;
-  const oy = -b.y + pad;
+  const pdf = new jsPDF({
+    unit: 'mm',
+    format: [sheet.w, sheet.h],
+    orientation: sheet.w >= sheet.h ? 'landscape' : 'portrait',
+    compress: true,
+  });
+
+  // Bleed box size in mm, and the same box once turned onto the sheet.
+  const artW = b.w + bleed * 2;
+  const artH = b.h + bleed * 2;
+  const boxW = sheet.rotated ? artH : artW;
+  const boxH = sheet.rotated ? artW : artH;
+  const ax = (sheet.w - boxW) / 2;
+  const ay = (sheet.h - boxH) / 2;
+
+  // net coordinates (mm, y-down) → sheet coordinates, honouring the quarter turn
+  const map = (x: number, y: number): [number, number] => {
+    const u = x - b.x + bleed;
+    const v = y - b.y + bleed;
+    return sheet.rotated ? [ax + (artH - v), ay + u] : [ax + u, ay + v];
+  };
 
   if (opts.art) {
     const c = await artworkCanvas(design, net, opts.dpi ?? 200, true);
-    pdf.addImage(c.toDataURL('image/jpeg', 0.94), 'JPEG', ox + b.x - bleed, oy + b.y - bleed, b.w + bleed * 2, b.h + bleed * 2);
+    const img = sheet.rotated ? rotateCanvasCW(c) : c;
+    pdf.addImage(img.toDataURL('image/jpeg', 0.94), 'JPEG', ax, ay, boxW, boxH);
   }
+
   if (opts.marks) {
+    // bleed box
     pdf.setLineWidth(0.2);
     pdf.setDrawColor(255, 59, 48);
     pdf.setLineDashPattern([2, 1.5], 0);
-    pdf.rect(ox + b.x - bleed, oy + b.y - bleed, b.w + bleed * 2, b.h + bleed * 2);
+    pdf.rect(ax, ay, boxW, boxH);
     pdf.setLineDashPattern([], 0);
 
+    // cut lines
     pdf.setDrawColor(17, 17, 17);
     for (const p of net.panels) {
       const poly = panelPoly(p);
       for (let i = 0; i < poly.length; i++) {
         const a = poly[i], bb = poly[(i + 1) % poly.length];
-        pdf.line(a[0] + ox, a[1] + oy, bb[0] + ox, bb[1] + oy);
+        const [x1, y1] = map(a[0], a[1]);
+        const [x2, y2] = map(bb[0], bb[1]);
+        pdf.line(x1, y1, x2, y2);
       }
     }
+
+    // crease lines
     pdf.setDrawColor(10, 132, 255);
     pdf.setLineDashPattern([3, 2], 0);
     for (const p of net.panels) {
       if (!p.parent) continue;
       const seg = creaseSegment(p, net.byId[p.parent]);
-      if (seg) pdf.line(seg[0] + ox, seg[1] + oy, seg[2] + ox, seg[3] + oy);
+      if (!seg) continue;
+      const [x1, y1] = map(seg[0], seg[1]);
+      const [x2, y2] = map(seg[2], seg[3]);
+      pdf.line(x1, y1, x2, y2);
     }
     pdf.setLineDashPattern([], 0);
+
+    // crop marks at the bleed-box corners, sitting in the sheet margin
+    pdf.setDrawColor(17, 17, 17);
+    pdf.setLineWidth(0.2);
+    const gap = 1.5, len = 3.5;
+    const corners: [number, number][] = [[ax, ay], [ax + boxW, ay], [ax, ay + boxH], [ax + boxW, ay + boxH]];
+    for (const [cx, cy] of corners) {
+      const dx = cx === ax ? -1 : 1;
+      const dy = cy === ay ? -1 : 1;
+      pdf.line(cx + dx * gap, cy, cx + dx * (gap + len), cy);
+      pdf.line(cx, cy + dy * gap, cx, cy + dy * (gap + len));
+    }
   }
+
   pdf.setFontSize(6);
   pdf.setTextColor(120);
   pdf.text(
     `${design.name} · ${net.name} · ${design.params.L}×${design.params.W}×${design.params.H} mm · ${materialById(design.materialId).name} · bleed ${bleed}mm · BoxCraft`,
-    pad, H - 3,
+    SHEET_MARGIN, sheet.h - 3.5,
+  );
+  pdf.text(
+    `Sheet ${sheet.label} · ${sheet.w} × ${sheet.h} mm · 1 up${sheet.rotated ? ' · artwork rotated 90°' : ''} · trim ${(sheet.trim * 100).toFixed(0)}%`,
+    sheet.w - SHEET_MARGIN, sheet.h - 3.5, { align: 'right' },
   );
   pdf.save(`${slug(design.name)}-${opts.art ? 'print' : 'dieline'}.pdf`);
 }
@@ -201,6 +264,8 @@ export async function exportSpecSheet(design: Design, net: Net, renderPNG: strin
   row('Internal dimensions (L × W × H)', `${design.params.L} × ${design.params.W} × ${design.params.H} mm`);
   row('Material', `${m.name} · ${m.caliper} mm caliper`);
   row('Flat sheet size', `${met.sheetW.toFixed(1)} × ${met.sheetH.toFixed(1)} mm`);
+  const sheet = chooseSheet(net, design);
+  row('Press sheet (1 up)', `${sheet.label} · ${sheet.w} × ${sheet.h} mm · trim ${(sheet.trim * 100).toFixed(0)}%`);
   row('Board area / blank', `${met.boardArea.toFixed(1)} cm²  (waste ${(met.waste * 100).toFixed(0)}%)`);
   row('Est. blank weight', `${met.weight.toFixed(1)} g`);
   row('Internal volume', `${met.volumeL.toFixed(2)} L`);

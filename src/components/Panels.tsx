@@ -14,6 +14,7 @@ import { NetThumb } from './Thumb';
 import {
   dielineSVG, download, exportArtworkPNG, exportPrintPDF, exportProject, exportSpecSheet, isEmbedded, slug,
 } from '../lib/exporters';
+import { chooseSheet } from '../lib/sheets';
 import type { BoxEngine } from '../three/engine';
 
 const mmIn = (mm: number, u: 'mm' | 'in') => (u === 'mm' ? mm : mm / 25.4);
@@ -561,6 +562,8 @@ export function ExportPanel({ engine, toast }: { engine: React.MutableRefObject<
   const [dpi, setDpi] = useState<'150' | '300' | '600'>('300');
   const [busy, setBusy] = useState('');
   const imp = useRef<HTMLInputElement>(null);
+  // The studio picks the press sheet from the flat blank — A4 landscape floor.
+  const sheet = useMemo(() => chooseSheet(net, design), [net, design]);
 
   const run = async (label: string, fn: () => Promise<void> | void) => {
     setBusy(label);
@@ -581,6 +584,18 @@ export function ExportPanel({ engine, toast }: { engine: React.MutableRefObject<
         </div>
       )}
       <Group title="Production files">
+        <Field label="Press sheet (auto)" hint={`${sheet.w} × ${sheet.h} mm`}>
+          <div className="sheetpick">
+            <b>{sheet.label}</b>
+            <span>
+              1 up{sheet.rotated ? ' · artwork turned 90°' : ''} · trim {Math.round(sheet.trim * 100)}%
+            </span>
+          </div>
+        </Field>
+        <p className="phint">
+          The studio sizes the sheet to the flat blank — A4 landscape as the floor, stepping up
+          through A3, SRA3, A2 and beyond when the carton needs more board.
+        </p>
         <Field label="Raster resolution">
           <Segmented value={dpi} options={[{ v: '150', l: '150' }, { v: '300', l: '300' }, { v: '600', l: '600 dpi' }]} onChange={setDpi} />
         </Field>
@@ -601,11 +616,11 @@ export function ExportPanel({ engine, toast }: { engine: React.MutableRefObject<
             <Icon d={I.copy} size={13} /> Copy dieline SVG for Figma
           </button>
           <button className="ebtn" disabled={!!busy}
-            onClick={() => run('Print PDF', () => exportPrintPDF(design, net, { art: true, marks: true, dpi: parseInt(dpi) }))}>
-            <Icon d={I.down} size={13} /> Print-ready PDF (artwork + marks)
+            onClick={() => run('Print PDF', () => exportPrintPDF(design, net, { art: true, marks: true, dpi: parseInt(dpi), sheet }))}>
+            <Icon d={I.down} size={13} /> Print PDF (artwork + marks)
           </button>
           <button className="ebtn" disabled={!!busy}
-            onClick={() => run('Dieline PDF', () => exportPrintPDF(design, net, { art: false, marks: true }))}>
+            onClick={() => run('Dieline PDF', () => exportPrintPDF(design, net, { art: false, marks: true, sheet }))}>
             <Icon d={I.ruler} size={13} /> Vector dieline PDF
           </button>
           <button className="ebtn" disabled={!!busy}
