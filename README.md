@@ -32,8 +32,9 @@ the render and the print files can never drift apart.
 | **Photo art library** | 38 curated photographs vendored into `public/art/` — one click drops a shot onto the targeted panel. Same-origin pixels keep every export untainted and the studio fully offline. Photos are placeholder art: swap in licensed imagery before print |
 | **Image corner radius** | Image layers accept a corner radius (capsule at max) in the inspector, used by the photo templates for window and medallion crops |
 | **Real-time 3D** | Panel-by-panel fold animation (0–100 %), orbit, board substrates, finishes, studio lighting and shadows |
-| **Exports** | Layered dieline SVG, print-ready PDF (bleed + registration marks), vector dieline PDF, 300 dpi flat artwork PNG, transparent 2× render PNG, `.boxcraft.json` project |
-| **Manufacturing spec sheet** | One-page PDF: structure, board, flat sheet size, board area and waste, blank weight, internal volume, bleed/glue, plus dieline and render thumbnails |
+| **Exports** | Layered dieline SVG, print-ready PDF on an auto-sized sheet (bleed + crop marks), vector dieline PDF, 300 dpi flat artwork PNG, transparent 2× render PNG, `.boxcraft.json` project |
+| **Auto press sheet** | The platform sizes the sheet for you: the blank is centred on the smallest standard sheet that fits — **A4 landscape** as the floor, stepping up through A3, SRA3, A2, A1, A0… for bigger cartons, and a custom oversize sheet past B0. Blanks with a short flat are quarter-turned so they sit better on the landscape sheet. The chosen sheet, its 1-up count and trim are shown in the Export tab and on the spec sheet |
+| **Manufacturing spec sheet** | One-page PDF: structure, board, flat sheet size, press sheet and trim, board area and waste, blank weight, internal volume, bleed/glue, plus dieline and render thumbnails |
 | **Estimator** | Board area, waste percentage, blank weight and internal volume update live with the geometry |
 
 ## Run it
@@ -73,11 +74,18 @@ structures (mailer, tray) tilt flat as they close instead of standing on edge.
 **`src/lib/render2d.ts`** — bakes the artboard to a single canvas texture that both
 the dieline view and the 3D model sample, using `u = (x - minX)/W`, `v = 1 - (y - minY)/H`.
 
+**`src/lib/sheets.ts`** — press-sheet selection. `chooseSheet(net, design)` takes the
+flat blank plus bleed, adds a 10 mm gripper/mark margin and returns the smallest
+standard landscape sheet that holds it (A4 is the floor, B0 the ceiling, sizes in
+between are listed in `SHEET_SIZES`). It also reports whether the blank is better
+quartered onto the sheet. The print PDF and the spec sheet both read this one
+choice, so the file and the paperwork always agree.
+
 ## Project layout
 
 ```
 src/
-  lib/        geometry.ts  store.ts  render2d.ts  exporters.ts  templates.ts  library.ts  session.ts
+  lib/        geometry.ts  store.ts  render2d.ts  exporters.ts  sheets.ts  templates.ts  library.ts  session.ts
   three/      engine.ts            vanilla three.js renderer + fold rig
   components/ Viewer3D  Dieline2D  Panels  Inspector  MiniViewer  Thumb  TemplateBrowser  ui
   pages/      Home.tsx  Editor.tsx
