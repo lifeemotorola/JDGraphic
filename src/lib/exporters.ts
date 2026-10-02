@@ -2,7 +2,7 @@ import type { Design } from './store';
 import { materialById } from './store';
 import { creaseSegment, netMetrics, panelPoly, type Net } from './geometry';
 import { drawArtwork, drawDieline, preloadAll } from './render2d';
-import { chooseSheet, SHEET_MARGIN, type SheetChoice } from './sheets';
+import { chooseSheet, type SheetChoice } from './sheets';
 
 /**
  * True when the studio is running inside an iframe. Embedded previews are
@@ -117,15 +117,16 @@ function rotateCanvasCW(c: HTMLCanvasElement): HTMLCanvasElement {
 }
 
 /**
- * Print-ready PDF on a real press sheet. The studio chooses the sheet (A4
- * landscape as the floor, stepping up to A3, SRA3, A2 … for bigger blanks),
- * centres the bleed box on it and adds crop marks plus the dieline overlay.
- * Passing `opts.sheet` overrides the automatic choice.
+ * Print-ready PDF on the selected full press sheet. The page keeps its chosen
+ * dimensions (A4, Legal, custom, etc.); the complete bleed box is scaled and
+ * placed using the editor's sheet adjustments before crop marks and dielines
+ * are overlaid. Passing `opts.sheet` lets the UI share its live calculation.
  */
 export async function exportPrintPDF(design: Design, net: Net, opts: { art: boolean; marks: boolean; dpi?: number; sheet?: SheetChoice }) {
   const b = net.bounds;
   const bleed = design.params.bleed;
   const sheet = opts.sheet ?? chooseSheet(net, design);
+  if (!sheet.fits) throw new Error('There is no printable area on this sheet. Adjust its margin or offsets.');
   const { jsPDF } = await import('jspdf');
   const pdf = new jsPDF({
     unit: 'mm',
@@ -137,16 +138,16 @@ export async function exportPrintPDF(design: Design, net: Net, opts: { art: bool
   // Bleed box size in mm, and the same box once turned onto the sheet.
   const artW = b.w + bleed * 2;
   const artH = b.h + bleed * 2;
-  const boxW = sheet.rotated ? artH : artW;
-  const boxH = sheet.rotated ? artW : artH;
-  const ax = (sheet.w - boxW) / 2;
-  const ay = (sheet.h - boxH) / 2;
+  const boxW = (sheet.rotated ? artH : artW) * sheet.scale;
+  const boxH = (sheet.rotated ? artW : artH) * sheet.scale;
+  const ax = (sheet.w - boxW) / 2 + sheet.offsetX;
+  const ay = (sheet.h - boxH) / 2 + sheet.offsetY;
 
-  // net coordinates (mm, y-down) → sheet coordinates, honouring the quarter turn
+  // net coordinates (mm, y-down) → adjusted sheet coordinates, honouring scale and rotation
   const map = (x: number, y: number): [number, number] => {
-    const u = x - b.x + bleed;
-    const v = y - b.y + bleed;
-    return sheet.rotated ? [ax + (artH - v), ay + u] : [ax + u, ay + v];
+    const u = (x - b.x + bleed) * sheet.scale;
+    const v = (y - b.y + bleed) * sheet.scale;
+    return sheet.rotated ? [ax + (artH * sheet.scale - v), ay + u] : [ax + u, ay + v];
   };
 
   if (opts.art) {
@@ -205,13 +206,115 @@ export async function exportPrintPDF(design: Design, net: Net, opts: { art: bool
   pdf.setTextColor(120);
   pdf.text(
     `${design.name} · ${net.name} · ${design.params.L}×${design.params.W}×${design.params.H} mm · ${materialById(design.materialId).name} · bleed ${bleed}mm · BoxCraft`,
-    SHEET_MARGIN, sheet.h - 3.5,
+    Math.max(4, sheet.margin), sheet.h - 3.5,
   );
   pdf.text(
-    `Sheet ${sheet.label} · ${sheet.w} × ${sheet.h} mm · 1 up${sheet.rotated ? ' · artwork rotated 90°' : ''} · trim ${(sheet.trim * 100).toFixed(0)}%`,
-    sheet.w - SHEET_MARGIN, sheet.h - 3.5, { align: 'right' },
+    `Sheet ${sheet.label} · ${sheet.w} × ${sheet.h} mm · scale ${(sheet.scale * 100).toFixed(1)}% · 1 up${sheet.rotated ? ' · artwork rotated 90°' : ''} · trim ${(sheet.trim * 100).toFixed(0)}%`,
+    sheet.w - Math.max(4, sheet.margin), sheet.h - 3.5, { align: 'right' },
   );
   pdf.save(`${slug(design.name)}-${opts.art ? 'print' : 'dieline'}.pdf`);
+}
+
+/**
+ * Full-page raster companion to the print PDF. The canvas is capped to keep
+ * oversized press sheets from exhausting browser memory; PDF remains vector.
+ */
+export async function exportPrintPNG(design: Design, net: Net, dpi = 300, chosenSheet?: SheetChoice) {
+  const sheet = chosenSheet ?? chooseSheet(net, design);
+  if (!sheet.fits) throw new Error('There is no printable area on this sheet. Adjust its margin or offsets.');
+
+  const pixelsPerMmAtDpi = dpi / 25.4;
+  const rawW = sheet.w * pixelsPerMmAtDpi;
+  const rawH = sheet.h * pixelsPerMmAtDpi;
+  const pixelScale = Math.min(1, 12000 / Math.max(rawW, rawH), Math.sqrt(24_000_000 / (rawW * rawH)));
+  const pageW = Math.max(1, Math.round(rawW * pixelScale));
+  const pageH = Math.max(1, Math.round(rawH * pixelScale));
+  const c = document.createElement('canvas');
+  c.width = pageW;
+  c.height = pageH;
+  const ctx = c.getContext('2d');
+  if (!ctx) throw new Error('Could not create the sheet canvas.');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, pageW, pageH);
+
+  const b = net.bounds;
+  const bleed = design.params.bleed;
+  const artW = b.w + bleed * 2;
+  const artH = b.h + bleed * 2;
+  const boxW = (sheet.rotated ? artH : artW) * sheet.scale;
+  const boxH = (sheet.rotated ? artW : artH) * sheet.scale;
+  const ax = (sheet.w - boxW) / 2 + sheet.offsetX;
+  const ay = (sheet.h - boxH) / 2 + sheet.offsetY;
+  const pxPerMm = pixelsPerMmAtDpi * pixelScale;
+
+  const art = await artworkCanvas(design, net, dpi, true);
+  const imageW = artW * sheet.scale * pxPerMm;
+  const imageH = artH * sheet.scale * pxPerMm;
+  ctx.save();
+  if (sheet.rotated) {
+    ctx.translate((ax + boxW / 2) * pxPerMm, (ay + boxH / 2) * pxPerMm);
+    ctx.rotate(Math.PI / 2);
+    ctx.drawImage(art, -imageW / 2, -imageH / 2, imageW, imageH);
+  } else {
+    ctx.drawImage(art, ax * pxPerMm, ay * pxPerMm, boxW * pxPerMm, boxH * pxPerMm);
+  }
+  ctx.restore();
+
+  const map = (x: number, y: number): [number, number] => {
+    const u = (x - b.x + bleed) * sheet.scale;
+    const v = (y - b.y + bleed) * sheet.scale;
+    return sheet.rotated ? [ax + (artH * sheet.scale - v), ay + u] : [ax + u, ay + v];
+  };
+  ctx.save();
+  ctx.scale(pxPerMm, pxPerMm);
+  ctx.lineWidth = 0.2;
+  ctx.strokeStyle = '#ff3b30';
+  ctx.setLineDash([2, 1.5]);
+  ctx.strokeRect(ax, ay, boxW, boxH);
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle = '#111111';
+  for (const p of net.panels) {
+    const poly = panelPoly(p);
+    ctx.beginPath();
+    poly.forEach(([x, y], i) => {
+      const [sx, sy] = map(x, y);
+      if (i) ctx.lineTo(sx, sy); else ctx.moveTo(sx, sy);
+    });
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = '#0a84ff';
+  ctx.setLineDash([3, 2]);
+  for (const p of net.panels) {
+    if (!p.parent) continue;
+    const seg = creaseSegment(p, net.byId[p.parent]);
+    if (!seg) continue;
+    const [x1, y1] = map(seg[0], seg[1]);
+    const [x2, y2] = map(seg[2], seg[3]);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle = '#111111';
+  const gap = 1.5, len = 3.5;
+  const corners: [number, number][] = [[ax, ay], [ax + boxW, ay], [ax, ay + boxH], [ax + boxW, ay + boxH]];
+  for (const [cx, cy] of corners) {
+    const dx = cx === ax ? -1 : 1;
+    const dy = cy === ay ? -1 : 1;
+    ctx.beginPath();
+    ctx.moveTo(cx + dx * gap, cy); ctx.lineTo(cx + dx * (gap + len), cy);
+    ctx.moveTo(cx, cy + dy * gap); ctx.lineTo(cx, cy + dy * (gap + len));
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    c.toBlob((value) => value ? resolve(value) : reject(new Error('PNG encoding failed.')), 'image/png');
+  });
+  const effectiveDpi = Math.max(1, Math.round(dpi * pixelScale));
+  download(`${slug(design.name)}-sheet-${effectiveDpi}dpi.png`, blob);
 }
 
 /* ----------------------------- spec sheet ----------------------------- */
@@ -265,7 +368,8 @@ export async function exportSpecSheet(design: Design, net: Net, renderPNG: strin
   row('Material', `${m.name} · ${m.caliper} mm caliper`);
   row('Flat sheet size', `${met.sheetW.toFixed(1)} × ${met.sheetH.toFixed(1)} mm`);
   const sheet = chooseSheet(net, design);
-  row('Press sheet (1 up)', `${sheet.label} · ${sheet.w} × ${sheet.h} mm · trim ${(sheet.trim * 100).toFixed(0)}%`);
+  row('Press sheet (1 up)', `${sheet.label} · ${sheet.w} × ${sheet.h} mm · scale ${(sheet.scale * 100).toFixed(1)}% · trim ${(sheet.trim * 100).toFixed(0)}%`);
+  row('Sheet adjustment', `Margin ${sheet.margin} mm · placement X ${sheet.offsetX} / Y ${sheet.offsetY} mm`);
   row('Board area / blank', `${met.boardArea.toFixed(1)} cm²  (waste ${(met.waste * 100).toFixed(0)}%)`);
   row('Est. blank weight', `${met.weight.toFixed(1)} g`);
   row('Internal volume', `${met.volumeL.toFixed(2)} L`);
@@ -291,7 +395,7 @@ export async function exportSpecSheet(design: Design, net: Net, renderPNG: strin
   pdf.setFont('helvetica', 'bold');
   pdf.setFontSize(11);
   pdf.text('Dieline', P, y + 2);
-  pdf.addImage(th, 'PNG', P, y + 6, tw, Math.min(thh, 95));
+  pdf.addImage(th, 'PNG', P, y + 6, tw, Math.min(thh, 78));
   pdf.setFontSize(7.5);
   pdf.setTextColor(120);
   pdf.text('Solid = cut · dashed blue = crease · dashed red = bleed. Not to scale. Confirm with your converter before tooling.', P, 285);

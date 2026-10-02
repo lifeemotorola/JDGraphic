@@ -14,6 +14,7 @@ import { create } from 'zustand';
 import { nanoid } from 'nanoid';
 import { BOX_TYPES, boxTypeById, type BoxTypeId } from './geometry';
 import { MATERIALS, newObject, startDesign, type Design, type DesignObject } from './store';
+import { isSheetPresetId } from './sheets';
 
 export const LIB_KEY = 'boxcraft.library.v1';
 export const LIB_FORMAT = 'boxcraft.library';
@@ -113,6 +114,17 @@ export function sanitizeDesign(raw: unknown): Design | null {
       caliper: num(p.caliper, 0.45, 0.1, 6),
       glue: num(p.glue, 12, 0, 100),
       bleed: num(p.bleed, 3, 0, 20),
+    },
+    pressSheet: {
+      preset: isSheetPresetId(r.pressSheet?.preset) ? r.pressSheet.preset : base.pressSheet.preset,
+      orientation: r.pressSheet?.orientation === 'portrait' ? 'portrait' : 'landscape',
+      customW: num(r.pressSheet?.customW, base.pressSheet.customW, 50, 2000),
+      customH: num(r.pressSheet?.customH, base.pressSheet.customH, 50, 2000),
+      fitToSheet: typeof r.pressSheet?.fitToSheet === 'boolean' ? r.pressSheet.fitToSheet : true,
+      scale: num(r.pressSheet?.scale, base.pressSheet.scale, 10, 200),
+      margin: num(r.pressSheet?.margin, base.pressSheet.margin, 5, 100),
+      offsetX: num(r.pressSheet?.offsetX, base.pressSheet.offsetX, -1000, 1000),
+      offsetY: num(r.pressSheet?.offsetY, base.pressSheet.offsetY, -1000, 1000),
     },
     materialId: MATERIALS.some((m) => m.id === r.materialId) ? r.materialId : base.materialId,
     boardColor: str(r.boardColor, base.boardColor),

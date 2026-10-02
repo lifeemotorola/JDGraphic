@@ -138,7 +138,7 @@ export default function Home({ nav }: { nav: (p: string) => void }) {
           </div>
           <div className="cards">
             {[
-              { i: I.ruler, h: 'True parametric structures', p: 'Seven industry structures — STE, RTE, seal end, RSC, roll-end mailer, sleeve and tray — rebuilt live from L × W × H, caliper and glue-flap rules.' },
+              { i: I.ruler, h: 'True parametric structures', p: `${BOX_TYPES.length} industry structures — from STE and roll-end mailers to auto-lock bottoms, gable tops, pillow boxes and corrugated shippers — rebuilt live from L × W × H, caliper and glue-flap rules.` },
               { i: I.cube, h: 'Folding you can watch', p: 'Every panel is hinged to its parent, so the blank folds in sequence: dust flaps, then lids, then tucks. Scrub the fold slider to check clearances.' },
               { i: I.brush, h: 'Design straight on the flat', p: 'Type, shapes and logos sit on the artboard in millimetres, snap to panel edges, and map onto the 3D surface instantly.' },
               { i: I.swatch, h: 'Board that behaves', p: 'SBS, kraft, black board, recycled grey and E/B flute — each with real caliper, gsm and surface roughness feeding both the render and the weight calc.' },
@@ -153,7 +153,7 @@ export default function Home({ nav }: { nav: (p: string) => void }) {
             ))}
           </div>
           <div className="stat-row">
-            <div className="stat"><b>7</b><span>Parametric structures</span></div>
+            <div className="stat"><b>{BOX_TYPES.length}</b><span>Parametric structures</span></div>
             <div className="stat"><b>0.1 mm</b><span>Dieline precision</span></div>
             <div className="stat"><b>600 dpi</b><span>Artwork export</span></div>
             <div className="stat"><b>100%</b><span>Runs in your browser</span></div>
@@ -288,7 +288,7 @@ export default function Home({ nav }: { nav: (p: string) => void }) {
           </div>
           <div className="price-grid">
             {[
-              { n: 'Starter', a: '$0', s: 'forever', f: ['All 7 structures', 'Unlimited 3D previews', 'SVG dieline export', 'PNG renders with watermark-free 1×', 'Local project files'], b: 'Start designing', pop: false },
+              { n: 'Starter', a: '$0', s: 'forever', f: [`All ${BOX_TYPES.length} structures`, 'Unlimited 3D previews', 'SVG dieline export', 'PNG renders with watermark-free 1×', 'Local project files'], b: 'Start designing', pop: false },
               { n: 'Studio', a: '$19', s: '/ month', f: ['Everything in Starter', '600 dpi print PDF with bleed', 'Transparent + 2× renders', 'Manufacturing spec sheets', 'Brand palettes and fonts', 'Priority render queue'], b: 'Go Studio', pop: true },
               { n: 'Converter', a: 'Custom', s: 'per seat', f: ['Embed the editor in your web-to-print flow', 'Your own structure library', 'CAD/CFF2 + DXF pipeline', 'SSO and shared team assets', 'Onboarding and SLA'], b: 'Talk to us', pop: false },
             ].map((p) => (

@@ -3,21 +3,23 @@ import {
   BOX_TYPES, boxTypeById, netMetrics, type BoxTypeId,
 } from '../lib/geometry';
 import {
-  MATERIALS, materialById, newObject, setBoxType, useStore, type DesignObject,
+  MATERIALS, materialById, newObject, setBoxType, useStore,
+  type DesignObject, type PressSheetSettings, type SheetPresetId,
 } from '../lib/store';
 import { PALETTES, TEMPLATES, applyTemplate } from '../lib/templates';
-import { templateDesign, templateSwatch, useLibrary } from '../lib/library';
+import { sanitizeDesign, templateDesign, templateSwatch, useLibrary } from '../lib/library';
 import { ART, artSrc } from '../lib/art';
 import { QR_DEFAULTS, QR_STYLE_META, qrDataURL, type QRStyle } from '../lib/qr';
 import { ColorIn, Field, Group, Icon, I, NumIn, Segmented, Slider, Swatches } from './ui';
 import { NetThumb } from './Thumb';
 import {
-  dielineSVG, download, exportArtworkPNG, exportPrintPDF, exportProject, exportSpecSheet, isEmbedded, slug,
+  dielineSVG, download, exportArtworkPNG, exportPrintPDF, exportPrintPNG, exportProject, exportSpecSheet, isEmbedded, slug,
 } from '../lib/exporters';
-import { chooseSheet } from '../lib/sheets';
+import { chooseSheet, SHEET_PRESET_OPTIONS } from '../lib/sheets';
 import type { BoxEngine } from '../three/engine';
 
 const mmIn = (mm: number, u: 'mm' | 'in') => (u === 'mm' ? mm : mm / 25.4);
+const toMM = (value: number, u: 'mm' | 'in') => (u === 'mm' ? value : value * 25.4);
 
 /* ============================ ECO SCORE ============================ */
 /** Material-efficiency grade derived from trim waste, with a bonus for
@@ -77,6 +79,10 @@ export function StructurePanel() {
   const m = materialById(design.materialId);
   const met = useMemo(() => netMetrics(net, design.params, m.gsm), [net, design.params, m.gsm]);
   const type = boxTypeById(design.boxType);
+  const pressSheet = design.pressSheet;
+  const sheetChoice = useMemo(() => chooseSheet(net, design), [net, design]);
+  const setSheet = (patch: Partial<PressSheetSettings>, key: string) =>
+    commit((d) => { d.pressSheet = { ...d.pressSheet, ...patch }; }, `sheet-${key}`);
 
   // simple converter-style quote model
   const boardCost = (met.boardArea / 10000) * (m.gsm / 1000) * 1.35; // $/blank material
@@ -102,6 +108,72 @@ export function StructurePanel() {
           ))}
         </div>
         <p className="phint">{type.desc}</p>
+      </Group>
+
+      <Group title="Press sheet">
+        <Field label="Sheet size">
+          <select className="inp" value={pressSheet.preset}
+            onChange={(e) => setSheet({ preset: e.target.value as SheetPresetId }, 'preset')}>
+            {SHEET_PRESET_OPTIONS.map((option) => (
+              <option key={option.id} value={option.id}>{option.name}</option>
+            ))}
+          </select>
+        </Field>
+
+        {pressSheet.preset !== 'custom' && (
+          <Field label="Orientation">
+            <Segmented value={pressSheet.orientation}
+              options={[{ v: 'landscape', l: 'Landscape' }, { v: 'portrait', l: 'Portrait' }]}
+              onChange={(v) => setSheet({ orientation: v }, 'orientation')} />
+          </Field>
+        )}
+
+        {pressSheet.preset === 'custom' && (
+          <div className="grid2">
+            <NumIn label={`Width (${units})`} value={mmIn(pressSheet.customW, units)}
+              min={mmIn(50, units)} max={mmIn(2000, units)} step={units === 'mm' ? 1 : 0.01}
+              onChange={(v) => setSheet({ customW: toMM(v, units) }, 'custom-width')} />
+            <NumIn label={`Height (${units})`} value={mmIn(pressSheet.customH, units)}
+              min={mmIn(50, units)} max={mmIn(2000, units)} step={units === 'mm' ? 1 : 0.01}
+              onChange={(v) => setSheet({ customH: toMM(v, units) }, 'custom-height')} />
+          </div>
+        )}
+
+        <Field label="Scale adjustment">
+          <Segmented value={pressSheet.fitToSheet ? 'fit' : 'adjust'}
+            options={[{ v: 'fit', l: 'Fit whole blank' }, { v: 'adjust', l: 'Adjust scale' }]}
+            onChange={(v) => setSheet({ fitToSheet: v === 'fit' }, 'fit')} />
+        </Field>
+        {!pressSheet.fitToSheet && (
+          <Slider label="Print scale" value={pressSheet.scale} min={10} max={200} step={1} unit="%"
+            onChange={(v) => setSheet({ scale: v }, 'scale')} />
+        )}
+
+        <div className="grid2">
+          <NumIn label={`Safe margin (${units})`} value={mmIn(pressSheet.margin, units)}
+            min={mmIn(5, units)} max={mmIn(100, units)} step={units === 'mm' ? 1 : 0.01}
+            onChange={(v) => setSheet({ margin: toMM(v, units) }, 'margin')} />
+          <NumIn label={`X offset (${units})`} value={mmIn(pressSheet.offsetX, units)}
+            min={mmIn(-1000, units)} max={mmIn(1000, units)} step={units === 'mm' ? 1 : 0.01}
+            onChange={(v) => setSheet({ offsetX: toMM(v, units) }, 'offset-x')} />
+        </div>
+        <div className="grid2" style={{ marginTop: 4 }}>
+          <NumIn label={`Y offset (${units})`} value={mmIn(pressSheet.offsetY, units)}
+            min={mmIn(-1000, units)} max={mmIn(1000, units)} step={units === 'mm' ? 1 : 0.01}
+            onChange={(v) => setSheet({ offsetY: toMM(v, units) }, 'offset-y')} />
+          <div />
+        </div>
+        <p className="phint">Fit mode keeps the complete blank on the page. X/Y offsets move it from centre; crop-mark clearance is included in the safe margin.</p>
+
+        <div className="sheetpick sheet-summary">
+          <b>{sheetChoice.label}</b>
+          <span>{sheetChoice.w.toFixed(1)} × {sheetChoice.h.toFixed(1)} mm</span>
+        </div>
+        <p className={`phint${sheetChoice.fits ? '' : ' sheet-warning'}`}>
+          {sheetChoice.fits
+            ? `${sheetChoice.scaledToFit ? 'Scaled down to ' : 'Output at '}${Math.round(sheetChoice.scale * 100)}%${sheetChoice.rotated ? ' · blank rotated 90°' : ''} · full sheet page`
+            : 'The offsets leave no printable area. Reduce the margin or placement offsets.'}
+        </p>
       </Group>
 
       <Group title="Dimensions" right={
@@ -562,7 +634,7 @@ export function ExportPanel({ engine, toast }: { engine: React.MutableRefObject<
   const [dpi, setDpi] = useState<'150' | '300' | '600'>('300');
   const [busy, setBusy] = useState('');
   const imp = useRef<HTMLInputElement>(null);
-  // The studio picks the press sheet from the flat blank — A4 landscape floor.
+  // Share the same selected page, fit scale and placement used by the Box tab.
   const sheet = useMemo(() => chooseSheet(net, design), [net, design]);
 
   const run = async (label: string, fn: () => Promise<void> | void) => {
@@ -584,17 +656,18 @@ export function ExportPanel({ engine, toast }: { engine: React.MutableRefObject<
         </div>
       )}
       <Group title="Production files">
-        <Field label="Press sheet (auto)" hint={`${sheet.w} × ${sheet.h} mm`}>
+        <Field label="Full-page export" hint={`${sheet.w.toFixed(1)} × ${sheet.h.toFixed(1)} mm`}>
           <div className="sheetpick">
             <b>{sheet.label}</b>
             <span>
-              1 up{sheet.rotated ? ' · artwork turned 90°' : ''} · trim {Math.round(sheet.trim * 100)}%
+              {Math.round(sheet.scale * 100)}% scale{sheet.rotated ? ' · blank turned 90°' : ''} · {Math.round(sheet.trim * 100)}% trim
             </span>
           </div>
         </Field>
-        <p className="phint">
-          The studio sizes the sheet to the flat blank — A4 landscape as the floor, stepping up
-          through A3, SRA3, A2 and beyond when the carton needs more board.
+        <p className={`phint${sheet.fits ? '' : ' sheet-warning'}`}>
+          {sheet.fits
+            ? 'Print PDF and full-sheet PNG use the complete selected page, with your margin and placement adjustments.'
+            : 'No printable area remains with these offsets. Adjust the sheet settings in the Box tab before exporting.'}
         </p>
         <Field label="Raster resolution">
           <Segmented value={dpi} options={[{ v: '150', l: '150' }, { v: '300', l: '300' }, { v: '600', l: '600 dpi' }]} onChange={setDpi} />
@@ -615,17 +688,21 @@ export function ExportPanel({ engine, toast }: { engine: React.MutableRefObject<
           }}>
             <Icon d={I.copy} size={13} /> Copy dieline SVG for Figma
           </button>
-          <button className="ebtn" disabled={!!busy}
-            onClick={() => run('Print PDF', () => exportPrintPDF(design, net, { art: true, marks: true, dpi: parseInt(dpi), sheet }))}>
-            <Icon d={I.down} size={13} /> Print PDF (artwork + marks)
+          <button className="ebtn" disabled={!!busy || !sheet.fits}
+            onClick={() => run('Full-sheet PDF', () => exportPrintPDF(design, net, { art: true, marks: true, dpi: parseInt(dpi), sheet }))}>
+            <Icon d={I.down} size={13} /> Full-sheet print PDF
           </button>
-          <button className="ebtn" disabled={!!busy}
+          <button className="ebtn" disabled={!!busy || !sheet.fits}
+            onClick={() => run('Full-sheet PNG', () => exportPrintPNG(design, net, parseInt(dpi), sheet))}>
+            <Icon d={I.image} size={13} /> Full-sheet PNG (art + marks)
+          </button>
+          <button className="ebtn" disabled={!!busy || !sheet.fits}
             onClick={() => run('Dieline PDF', () => exportPrintPDF(design, net, { art: false, marks: true, sheet }))}>
-            <Icon d={I.ruler} size={13} /> Vector dieline PDF
+            <Icon d={I.ruler} size={13} /> Vector dieline PDF (full sheet)
           </button>
           <button className="ebtn" disabled={!!busy}
             onClick={() => run('Artwork PNG', () => exportArtworkPNG(design, net, parseInt(dpi)))}>
-            <Icon d={I.image} size={13} /> Flat artwork PNG
+            <Icon d={I.image} size={13} /> Flat artwork PNG (blank only)
           </button>
         </div>
       </Group>
@@ -669,8 +746,12 @@ export function ExportPanel({ engine, toast }: { engine: React.MutableRefObject<
             if (!f) return;
             const r = new FileReader();
             r.onload = () => {
-              try { loadDesign(JSON.parse(String(r.result))); toast('Project loaded'); }
-              catch { toast('Could not read that file'); }
+              try {
+                const imported = sanitizeDesign(JSON.parse(String(r.result)));
+                if (!imported) { toast('That project file is not valid'); return; }
+                loadDesign(imported);
+                toast('Project loaded');
+              } catch { toast('Could not read that file'); }
             };
             r.readAsText(f);
           }} />
