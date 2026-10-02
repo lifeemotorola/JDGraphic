@@ -34,7 +34,7 @@ export interface PanelSpec {
   kind: PanelKind;
   face?: FaceKey;
   /** Outline generator name. */
-  shape?: 'rect' | 'tuckTop' | 'tuckBottom' | 'dustL' | 'dustR' | 'glueR' | 'glueB' | 'glueT' | 'flapTop' | 'flapBottom' | 'lidTop';
+  shape?: 'rect' | 'tuckTop' | 'tuckBottom' | 'dustL' | 'dustR' | 'glueR' | 'glueB' | 'glueT' | 'flapTop' | 'flapBottom' | 'lidTop' | 'lockTab' | 'gableRoof' | 'pillowCap';
   /** Chamfer / nose size used by some shapes. */
   k?: number;
   /** Panels folded later in the assembly animation (0..1 start offset). */
@@ -81,7 +81,12 @@ export type BoxTypeId =
   | 'rsc'
   | 'sleeve'
   | 'mailer'
-  | 'tray';
+  | 'tray'
+  | 'auto-lock'
+  | 'gable'
+  | 'pillow'
+  | 'fol'
+  | 'hsc';
 
 export interface BoxType {
   id: BoxTypeId;
@@ -160,6 +165,31 @@ function flapBottom(w: number, h: number, k: number): [number, number][] {
   return flapTop(w, h, k).map(([x, y]) => [x, h - y] as [number, number]);
 }
 
+/** Interlocking tongue used on a simple auto-lock bottom flap. */
+function lockTab(w: number, h: number, k: number): [number, number][] {
+  const edge = Math.min(k, w * 0.08, h * 0.2);
+  const notch = Math.min(k * 1.6, w * 0.12, h * 0.28);
+  return [
+    [0, 0], [w, 0], [w, h - edge], [w - edge, h],
+    [w * 0.61, h], [w * 0.54, h - notch], [w * 0.46, h - notch],
+    [w * 0.39, h], [edge, h], [0, h - edge],
+  ];
+}
+
+/** Peaked panel for a gable carton roof. */
+function gableRoof(w: number, h: number): [number, number][] {
+  return [[0, h], [0, h * 0.42], [w / 2, 0], [w, h * 0.42], [w, h]];
+}
+
+/** Piecewise rounded cap; the hinge edge is at the top or bottom as needed. */
+function pillowCap(w: number, h: number, top: boolean): [number, number][] {
+  const pts: [number, number][] = [
+    [0, h], [0, h * 0.64], [w * 0.12, h * 0.27], [w * 0.31, h * 0.08],
+    [w * 0.5, 0], [w * 0.69, h * 0.08], [w * 0.88, h * 0.27], [w, h * 0.64], [w, h],
+  ];
+  return top ? pts : pts.map(([x, y]) => [x, h - y] as [number, number]);
+}
+
 function outlineFor(s: PanelSpec): [number, number][] {
   const k = s.k ?? 4;
   switch (s.shape) {
@@ -172,6 +202,9 @@ function outlineFor(s: PanelSpec): [number, number][] {
     case 'glueT': return glueT(s.w, s.h);
     case 'flapTop': return flapTop(s.w, s.h, k);
     case 'flapBottom': return flapBottom(s.w, s.h, k);
+    case 'lockTab': return lockTab(s.w, s.h, k);
+    case 'gableRoof': return gableRoof(s.w, s.h);
+    case 'pillowCap': return pillowCap(s.w, s.h, s.hinge === 'top');
     default: return R(s.w, s.h);
   }
 }
@@ -310,6 +343,104 @@ function tray(p: BoxParams): PanelSpec[] {
   ];
 }
 
+/** Common wrap-around wall and manufacturer's joint used by folding cartons. */
+function cartonWalls(p: BoxParams): PanelSpec[] {
+  const { L, W, H, glue } = p;
+  return [
+    { id: 'front', label: 'Front', w: L, h: H, angle: 0, kind: 'panel', face: 'front' },
+    { id: 'side-r', label: 'Right', w: W, h: H, parent: 'front', hinge: 'right', angle: 90, kind: 'panel', face: 'right' },
+    { id: 'back', label: 'Back', w: L, h: H, parent: 'side-r', hinge: 'right', angle: 90, kind: 'panel', face: 'back' },
+    { id: 'side-l', label: 'Left', w: W, h: H, parent: 'back', hinge: 'right', angle: 90, kind: 'panel', face: 'left' },
+    { id: 'glue', label: 'Glue', w: glue, h: H, parent: 'side-l', hinge: 'right', angle: 90, kind: 'glue', face: 'inner', shape: 'glueR' },
+  ];
+}
+
+/** Retail carton with interlocking bottom tongues and a conventional tuck top. */
+function autoLockBottom(p: BoxParams): PanelSpec[] {
+  const { L, W } = p;
+  const d = dustLen(W);
+  const t = tuckLen(W);
+  const k = clamp(W * 0.18, 2, 8);
+  return [
+    ...cartonWalls(p),
+    { id: 'dust-rt', label: 'Dust', w: W, h: d, parent: 'side-r', hinge: 'top', angle: 90, kind: 'dust', face: 'inner', shape: 'dustR', k, seq: 0.3 },
+    { id: 'dust-lt', label: 'Dust', w: W, h: d, parent: 'side-l', hinge: 'top', angle: 90, kind: 'dust', face: 'inner', shape: 'dustL', k, seq: 0.3 },
+    { id: 'lid-top', label: 'Top', w: L, h: W, parent: 'back', hinge: 'top', angle: 90, kind: 'flap', face: 'top', seq: 0.55 },
+    { id: 'tuck-top', label: 'Tuck', w: L, h: t, parent: 'lid-top', hinge: 'top', angle: 90, kind: 'tuck', face: 'inner', shape: 'tuckTop', k, seq: 0.78 },
+    { id: 'bottom-dust-r', label: 'Bottom dust', w: W, h: d, parent: 'side-r', hinge: 'bottom', angle: 90, kind: 'dust', face: 'inner', shape: 'dustR', k, seq: 0.25 },
+    { id: 'bottom-dust-l', label: 'Bottom dust', w: W, h: d, parent: 'side-l', hinge: 'bottom', angle: 90, kind: 'dust', face: 'inner', shape: 'dustL', k, seq: 0.25 },
+    { id: 'lock-back', label: 'Lock base', w: L, h: W * 0.58, parent: 'back', hinge: 'bottom', angle: 90, kind: 'flap', face: 'bottom', shape: 'lockTab', k, layer: 2, seq: 0.55 },
+    { id: 'lock-front', label: 'Lock tongue', w: L, h: W * 0.58, parent: 'front', hinge: 'bottom', angle: 90, kind: 'flap', face: 'bottom', shape: 'lockTab', k, layer: 3, seq: 0.72 },
+  ];
+}
+
+/** Carton with a peaked gable roof, side gussets and a locking lower end. */
+function gableCarton(p: BoxParams): PanelSpec[] {
+  const { L, W } = p;
+  const half = W * 0.5;
+  const roof = clamp(W * 0.58, 16, 90);
+  const k = clamp(W * 0.12, 2, 7);
+  return [
+    ...cartonWalls(p),
+    { id: 'gable-gusset-r', label: 'Gable gusset', w: W, h: roof * 0.58, parent: 'side-r', hinge: 'top', angle: 90, kind: 'dust', face: 'inner', shape: 'flapTop', k, seq: 0.32 },
+    { id: 'gable-gusset-l', label: 'Gable gusset', w: W, h: roof * 0.58, parent: 'side-l', hinge: 'top', angle: 90, kind: 'dust', face: 'inner', shape: 'flapTop', k, seq: 0.32 },
+    { id: 'gable-front', label: 'Gable roof', w: L, h: roof, parent: 'front', hinge: 'top', angle: 72, kind: 'flap', face: 'top', shape: 'gableRoof', k, seq: 0.58 },
+    { id: 'gable-back', label: 'Gable roof', w: L, h: roof, parent: 'back', hinge: 'top', angle: 108, kind: 'flap', face: 'top', shape: 'gableRoof', k, seq: 0.62 },
+    { id: 'gable-tuck', label: 'Tuck', w: L, h: clamp(W * 0.32, 10, 40), parent: 'gable-front', hinge: 'top', angle: 90, kind: 'tuck', face: 'inner', shape: 'tuckTop', k, seq: 0.86 },
+    { id: 'gable-bottom-front', label: 'Bottom', w: L, h: half, parent: 'front', hinge: 'bottom', angle: 90, kind: 'flap', face: 'bottom', shape: 'flapBottom', k, seq: 0.62 },
+    { id: 'gable-bottom-back', label: 'Bottom', w: L, h: half, parent: 'back', hinge: 'bottom', angle: 90, kind: 'flap', face: 'bottom', shape: 'flapBottom', k, seq: 0.6 },
+    { id: 'gable-bottom-r', label: 'Bottom dust', w: W, h: half, parent: 'side-r', hinge: 'bottom', angle: 90, kind: 'dust', face: 'inner', shape: 'dustR', k, seq: 0.35 },
+    { id: 'gable-bottom-l', label: 'Bottom dust', w: W, h: half, parent: 'side-l', hinge: 'bottom', angle: 90, kind: 'dust', face: 'inner', shape: 'dustL', k, seq: 0.35 },
+  ];
+}
+
+/** Gift/apparel carton with curved, overlapping end caps. */
+function pillowBox(p: BoxParams): PanelSpec[] {
+  const { L, W } = p;
+  const cap = clamp(W * 0.82, 14, 65);
+  const k = clamp(W * 0.16, 2, 8);
+  return [
+    ...cartonWalls(p),
+    { id: 'pillow-top-front', label: 'Curved end', w: L, h: cap, parent: 'front', hinge: 'top', angle: 90, kind: 'flap', face: 'top', shape: 'pillowCap', k, seq: 0.56 },
+    { id: 'pillow-top-back', label: 'Curved end', w: L, h: cap, parent: 'back', hinge: 'top', angle: 90, kind: 'flap', face: 'top', shape: 'pillowCap', k, seq: 0.58 },
+    { id: 'pillow-bottom-front', label: 'Curved end', w: L, h: cap, parent: 'front', hinge: 'bottom', angle: 90, kind: 'flap', face: 'bottom', shape: 'pillowCap', k, seq: 0.56 },
+    { id: 'pillow-bottom-back', label: 'Curved end', w: L, h: cap, parent: 'back', hinge: 'bottom', angle: 90, kind: 'flap', face: 'bottom', shape: 'pillowCap', k, seq: 0.58 },
+  ];
+}
+
+/** Corrugated shipper whose opposing long flaps overlap across the full top and bottom. */
+function fullOverlap(p: BoxParams): PanelSpec[] {
+  const { L, W } = p;
+  const long = clamp(W * 0.56, 12, 1000);
+  const short = clamp(W * 0.38, 10, 500);
+  const k = clamp(W * 0.08, 1.5, 5);
+  return [
+    ...cartonWalls(p),
+    { id: 'fol-front-top', label: 'Overlap flap', w: L, h: long, parent: 'front', hinge: 'top', angle: 90, kind: 'flap', face: 'top', shape: 'flapTop', k, seq: 0.62 },
+    { id: 'fol-back-top', label: 'Overlap flap', w: L, h: long, parent: 'back', hinge: 'top', angle: 90, kind: 'flap', face: 'top', shape: 'flapTop', k, seq: 0.6 },
+    { id: 'fol-right-top', label: 'Side flap', w: W, h: short, parent: 'side-r', hinge: 'top', angle: 90, kind: 'dust', face: 'top', shape: 'flapTop', k, seq: 0.38 },
+    { id: 'fol-left-top', label: 'Side flap', w: W, h: short, parent: 'side-l', hinge: 'top', angle: 90, kind: 'dust', face: 'top', shape: 'flapTop', k, seq: 0.38 },
+    { id: 'fol-front-bottom', label: 'Overlap flap', w: L, h: long, parent: 'front', hinge: 'bottom', angle: 90, kind: 'flap', face: 'bottom', shape: 'flapBottom', k, seq: 0.62 },
+    { id: 'fol-back-bottom', label: 'Overlap flap', w: L, h: long, parent: 'back', hinge: 'bottom', angle: 90, kind: 'flap', face: 'bottom', shape: 'flapBottom', k, seq: 0.6 },
+    { id: 'fol-right-bottom', label: 'Side flap', w: W, h: short, parent: 'side-r', hinge: 'bottom', angle: 90, kind: 'dust', face: 'bottom', shape: 'flapBottom', k, seq: 0.38 },
+    { id: 'fol-left-bottom', label: 'Side flap', w: W, h: short, parent: 'side-l', hinge: 'bottom', angle: 90, kind: 'dust', face: 'bottom', shape: 'flapBottom', k, seq: 0.38 },
+  ];
+}
+
+/** Half-slotted corrugated case with a closed bottom and intentionally open top. */
+function halfSlotted(p: BoxParams): PanelSpec[] {
+  const { L, W } = p;
+  const half = W / 2;
+  const k = clamp(W * 0.1, 1.5, 5);
+  return [
+    ...cartonWalls(p),
+    { id: 'hsc-front-bottom', label: 'Bottom flap', w: L, h: half, parent: 'front', hinge: 'bottom', angle: 90, kind: 'flap', face: 'bottom', shape: 'flapBottom', k, seq: 0.6 },
+    { id: 'hsc-right-bottom', label: 'Bottom flap', w: W, h: half, parent: 'side-r', hinge: 'bottom', angle: 90, kind: 'dust', face: 'bottom', shape: 'flapBottom', k, seq: 0.38 },
+    { id: 'hsc-back-bottom', label: 'Bottom flap', w: L, h: half, parent: 'back', hinge: 'bottom', angle: 90, kind: 'flap', face: 'bottom', shape: 'flapBottom', k, seq: 0.6 },
+    { id: 'hsc-left-bottom', label: 'Bottom flap', w: W, h: half, parent: 'side-l', hinge: 'bottom', angle: 90, kind: 'dust', face: 'bottom', shape: 'flapBottom', k, seq: 0.38 },
+  ];
+}
+
 export const BOX_TYPES: BoxType[] = [
   {
     id: 'ste', name: 'Straight Tuck End', short: 'STE',
@@ -345,6 +476,31 @@ export const BOX_TYPES: BoxType[] = [
     id: 'tray', name: 'Open Tray', short: 'TRY',
     desc: 'Glued corner tray — pairs with a sleeve or lid for two-piece rigid style packaging.',
     tags: ['Two-piece', 'Gift'], defaults: [160, 110, 45], build: tray, layFlat: true,
+  },
+  {
+    id: 'auto-lock', name: 'Auto-Lock Bottom Carton', short: 'ALB',
+    desc: 'Retail carton with interlocking base tongues for quick machine assembly and a clean tuck top.',
+    tags: ['Retail', 'Auto-bottom'], defaults: [90, 55, 150], build: autoLockBottom,
+  },
+  {
+    id: 'gable', name: 'Gable Top Carton', short: 'GTC',
+    desc: 'Peaked top with fold-in gussets and a tuck closure — a familiar format for food and takeaway packs.',
+    tags: ['Food', 'Gable top'], defaults: [150, 85, 190], build: gableCarton,
+  },
+  {
+    id: 'pillow', name: 'Pillow Box', short: 'PB',
+    desc: 'Compact gift or apparel pack with curved, self-closing end caps and a minimal wrap-around seam.',
+    tags: ['Gift', 'Apparel'], defaults: [180, 70, 45], build: pillowBox,
+  },
+  {
+    id: 'fol', name: 'Full-Overlap Carton', short: 'FOL',
+    desc: 'Corrugated shipper with long opposing flaps that overlap for a reinforced top and bottom.',
+    tags: ['Shipping', 'Corrugated'], defaults: [300, 200, 220], build: fullOverlap,
+  },
+  {
+    id: 'hsc', name: 'Half-Slotted Carton', short: 'HSC',
+    desc: 'Open-top corrugated case with a full set of closing bottom flaps, ready for a separate lid or cover.',
+    tags: ['Shipping', 'Open top'], defaults: [300, 200, 200], build: halfSlotted,
   },
 ];
 

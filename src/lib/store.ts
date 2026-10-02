@@ -104,10 +104,37 @@ export interface SceneState {
   showInner: boolean;
 }
 
+export type SheetPresetId =
+  | 'auto' | 'a4' | 'legal' | 'letter' | 'tabloid' | 'a3' | 'sra3'
+  | 'a2' | 'sra2' | 'a1' | 'sra1' | 'b1' | 'a0' | 'b0' | 'custom';
+
+export interface PressSheetSettings {
+  preset: SheetPresetId;
+  /** Standard formats can be requested portrait or landscape. */
+  orientation: 'landscape' | 'portrait';
+  /** Custom page dimensions in millimetres (used as entered). */
+  customW: number;
+  customH: number;
+  /** Keep the complete dieline on the page; scale down only if needed. */
+  fitToSheet: boolean;
+  /** Requested scale when fit-to-sheet is off, in percent. */
+  scale: number;
+  /** Printable margin and centre-relative placement offsets, in millimetres. */
+  margin: number;
+  offsetX: number;
+  offsetY: number;
+}
+
+export const defaultPressSheet = (): PressSheetSettings => ({
+  preset: 'auto', orientation: 'landscape', customW: 297, customH: 210,
+  fitToSheet: true, scale: 100, margin: 10, offsetX: 0, offsetY: 0,
+});
+
 export interface Design {
   name: string;
   boxType: BoxTypeId;
   params: BoxParams;
+  pressSheet: PressSheetSettings;
   materialId: string;
   boardColor: string;
   innerColor: string;
@@ -175,6 +202,7 @@ export const startDesign = (): Design => ({
   name: 'Untitled carton',
   boxType: 'ste',
   params: defaultParams('ste'),
+  pressSheet: defaultPressSheet(),
   materialId: 'sbs',
   boardColor: '#ffffff',
   innerColor: '#efe9dd',
@@ -199,6 +227,12 @@ export const useStore = create<Store>((set, get) => ({
     const prev = s.design;
     const next = clone(prev);
     fn(next);
+    // Artwork, scene and press-sheet edits should not rebuild the net or reset the 2D/3D view.
+    const geometryChanged = prev.boxType !== next.boxType
+      || prev.params.L !== next.params.L
+      || prev.params.W !== next.params.W
+      || prev.params.H !== next.params.H
+      || prev.params.glue !== next.params.glue;
     const now = Date.now();
     let past = s.past;
     const canCoalesce = key && coalesce && coalesce.key === key && now - coalesce.t < 700;
@@ -208,7 +242,7 @@ export const useStore = create<Store>((set, get) => ({
       design: next,
       past,
       future: [],
-      net: buildNet(next.boxType, next.params),
+      net: geometryChanged ? buildNet(next.boxType, next.params) : s.net,
       dirty: s.dirty + 1,
     });
   },

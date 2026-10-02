@@ -22,7 +22,7 @@ the render and the print files can never drift apart.
 | **Eco score** | Every blank gets an A–F material-efficiency grade from trim waste, with a bonus for recycled grey/kraft board |
 | **Favicon & PWA** | Branded BoxCraft app icon, theme colour, social preview tags and a web manifest so the studio installs like an app |
 | **My templates** | Save any design as your own reusable template — stored in the browser, editable, duplicable, and portable through a `.json` library file |
-| **7 structures** | Straight/Reverse Tuck End, Seal End, Regular Slotted Carton, Roll End Mailer, Sleeve, Open Tray |
+| **12 structures** | STE, RTE, Seal End, RSC, Roll End Mailer, Sleeve, Open Tray, Auto-Lock Bottom, Gable Top, Pillow Box, Full-Overlap Carton, Half-Slotted Carton |
 | **Parametric dielines** | Cut / crease / bleed / safe-area generated from L × W × H, caliper and glue-flap width |
 | **Artwork editor** | Text, images, rectangles, ellipses and rules on the flat, with panel snapping, per-panel fills and a layer inspector |
 | **Arrange tools** | Multi-select layers (⌘/Ctrl adds, Shift selects a run, *Select all*), then align left/centre/right, top/middle/bottom, or distribute horizontally/vertically in one undo step |
@@ -32,8 +32,8 @@ the render and the print files can never drift apart.
 | **Photo art library** | 38 curated photographs vendored into `public/art/` — one click drops a shot onto the targeted panel. Same-origin pixels keep every export untainted and the studio fully offline. Photos are placeholder art: swap in licensed imagery before print |
 | **Image corner radius** | Image layers accept a corner radius (capsule at max) in the inspector, used by the photo templates for window and medallion crops |
 | **Real-time 3D** | Panel-by-panel fold animation (0–100 %), orbit, board substrates, finishes, studio lighting and shadows |
-| **Exports** | Layered dieline SVG, print-ready PDF on an auto-sized sheet (bleed + crop marks), vector dieline PDF, 300 dpi flat artwork PNG, transparent 2× render PNG, `.boxcraft.json` project |
-| **Auto press sheet** | The platform sizes the sheet for you: the blank is centred on the smallest standard sheet that fits — **A4 landscape** as the floor, stepping up through A3, SRA3, A2, A1, A0… for bigger cartons, and a custom oversize sheet past B0. Blanks with a short flat are quarter-turned so they sit better on the landscape sheet. The chosen sheet, its 1-up count and trim are shown in the Export tab and on the spec sheet |
+| **Exports** | Layered dieline SVG, full-sheet PDF and PNG (bleed + crop marks), vector dieline PDF, flat artwork PNG up to 600 dpi, transparent 2× render PNG, `.boxcraft.json` project |
+| **Press-sheet controls** | Choose Auto, A4, Legal, Letter, Tabloid, other standard press sheets, or a custom size above Dimensions. Adjust orientation, scale, printable margin and X/Y placement. Full-sheet exports preserve the page size and keep the complete blank visible; the selected size and scale appear in the Export tab and spec sheet |
 | **Manufacturing spec sheet** | One-page PDF: structure, board, flat sheet size, press sheet and trim, board area and waste, blank weight, internal volume, bleed/glue, plus dieline and render thumbnails |
 | **Estimator** | Board area, waste percentage, blank weight and internal volume update live with the geometry |
 
