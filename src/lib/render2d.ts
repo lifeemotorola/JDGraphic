@@ -72,6 +72,88 @@ function drawText(ctx: CanvasRenderingContext2D, o: Design['objects'][number]) {
 }
 
 /** CSS filter string for the non-destructive photo edits (mm-aware blur). */
+export function imageAspect(
+  o: Pick<Design['objects'][number], 'src' | 'img'>,
+  repaint?: () => void,
+): number | null {
+  const img = getImage(o.src, repaint);
+  if (!img || !img.naturalWidth || !img.naturalHeight) return null;
+  const e: ImageEdits = { ...defaultImageEdits(), ...o.img };
+  const cl = Math.min(0.9, Math.max(0, e.cropL));
+  const cr = Math.min(0.9, Math.max(0, e.cropR));
+  const ct = Math.min(0.9, Math.max(0, e.cropT));
+  const cb = Math.min(0.9, Math.max(0, e.cropB));
+  const w = Math.max(1, img.naturalWidth * (1 - cl - cr));
+  const h = Math.max(1, img.naturalHeight * (1 - ct - cb));
+  return w / h;
+}
+
+export function fitBoxInRect(
+  availW: number,
+  availH: number,
+  aspect: number,
+  rotDeg = 0,
+): { w: number; h: number } {
+  const ar = Math.max(0.05, aspect || 1);
+  const aw = Math.max(2, availW);
+  const ah = Math.max(2, availH);
+  const rad = (rotDeg * Math.PI) / 180;
+  const c = Math.abs(Math.cos(rad));
+  const s = Math.abs(Math.sin(rad));
+  const h = Math.max(2, Math.min(aw / Math.max(1e-6, ar * c + s), ah / Math.max(1e-6, ar * s + c)));
+  const w = Math.max(2, h * ar);
+  return { w, h };
+}
+
+export function clampObjectToBounds(
+  o: { x: number; y: number; w: number; h: number; rot?: number },
+  bounds: { x: number; y: number; w: number; h: number },
+  aspect?: number | null,
+): { x: number; y: number; w: number; h: number } {
+  const rot = o.rot ?? 0;
+  const ar = aspect && aspect > 0 ? aspect : Math.max(0.05, o.w / Math.max(0.1, o.h));
+  let w = Math.max(2, o.w);
+  let h = aspect && aspect > 0 ? Math.max(2, w / ar) : Math.max(2, o.h);
+  const maxFit = fitBoxInRect(bounds.w, bounds.h, ar, rot);
+  if (w > maxFit.w || h > maxFit.h) {
+    w = maxFit.w;
+    h = maxFit.h;
+  }
+  const rad = (rot * Math.PI) / 180;
+  const c = Math.abs(Math.cos(rad));
+  const s = Math.abs(Math.sin(rad));
+  const halfBW = (w * c + h * s) / 2;
+  const halfBH = (w * s + h * c) / 2;
+  const cx0 = o.x + o.w / 2;
+  const cy0 = o.y + o.h / 2;
+  const minCx = bounds.x + halfBW;
+  const maxCx = bounds.x + bounds.w - halfBW;
+  const minCy = bounds.y + halfBH;
+  const maxCy = bounds.y + bounds.h - halfBH;
+  const cx = minCx <= maxCx ? Math.min(maxCx, Math.max(minCx, cx0)) : bounds.x + bounds.w / 2;
+  const cy = minCy <= maxCy ? Math.min(maxCy, Math.max(minCy, cy0)) : bounds.y + bounds.h / 2;
+  return { x: cx - w / 2, y: cy - h / 2, w, h };
+}
+
+export function hostPanelFor(net: Net, x: number, y: number, w: number, h: number) {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  for (let i = net.panels.length - 1; i >= 0; i--) {
+    const p = net.panels[i];
+    if (cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h) return p;
+  }
+  let best = net.byId['front'] ?? net.root;
+  let bestDist = Infinity;
+  for (const p of net.panels) {
+    const d = Math.hypot(cx - (p.x + p.w / 2), cy - (p.y + p.h / 2));
+    if (d < bestDist) {
+      bestDist = d;
+      best = p;
+    }
+  }
+  return best;
+}
+
 export function imageFilter(e: ImageEdits, pxPerMm = 1): string {
   const f: string[] = [];
   if (e.brightness !== 100) f.push(`brightness(${e.brightness}%)`);
@@ -86,9 +168,9 @@ export function imageFilter(e: ImageEdits, pxPerMm = 1): string {
 }
 
 function drawImageObj(ctx: CanvasRenderingContext2D, o: Design['objects'][number], repaint?: () => void) {
-  if (o.radius > 0) { roundRect(ctx, 0, 0, o.w, o.h, o.radius); ctx.clip(); }
   const img = getImage(o.src, repaint);
   if (!img) {
+    if (o.radius > 0) { roundRect(ctx, 0, 0, o.w, o.h, o.radius); ctx.clip(); }
     ctx.fillStyle = 'rgba(120,130,145,0.25)';
     ctx.fillRect(0, 0, o.w, o.h);
     return;
@@ -107,15 +189,14 @@ function drawImageObj(ctx: CanvasRenderingContext2D, o: Design['objects'][number
 
   const ir = baseW / baseH;
   const br = o.w / o.h;
-  let sx = baseX, sy = baseY, sw = baseW, sh = baseH;
+  const sx = baseX, sy = baseY, sw = baseW, sh = baseH;
   let dx = 0, dy = 0, dw = o.w, dh = o.h;
-  if (o.fit === 'cover') {
-    if (ir > br) { sw = baseH * br; sx = baseX + (baseW - sw) / 2; }
-    else { sh = baseW / br; sy = baseY + (baseH - sh) / 2; }
-  } else if (o.fit === 'contain') {
+  if (o.fit !== 'stretch') {
     if (ir > br) { dh = o.w / ir; dy = (o.h - dh) / 2; }
     else { dw = o.h * ir; dx = (o.w - dw) / 2; }
   }
+
+  if (o.radius > 0) { roundRect(ctx, dx, dy, dw, dh, o.radius); ctx.clip(); }
 
   // approximate device scale so blur reads the same at any zoom / export dpi
   const m = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
@@ -127,7 +208,7 @@ function drawImageObj(ctx: CanvasRenderingContext2D, o: Design['objects'][number
     try { ctx.filter = imageFilter(e, pxPerMm); } catch { /* no filter support */ }
   }
   if (e.flipH || e.flipV) {
-    ctx.translate(e.flipH ? o.w : 0, e.flipV ? o.h : 0);
+    ctx.translate(e.flipH ? dx * 2 + dw : 0, e.flipV ? dy * 2 + dh : 0);
     ctx.scale(e.flipH ? -1 : 1, e.flipV ? -1 : 1);
   }
   ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
@@ -140,6 +221,10 @@ function drawImageObj(ctx: CanvasRenderingContext2D, o: Design['objects'][number
     ctx.globalAlpha = Math.min(1, e.sharpen / 140);
     const base = imageFilter(e, pxPerMm);
     try { ctx.filter = `${base === 'none' ? '' : base} blur(${Math.max(0.6, pxPerMm * 0.25).toFixed(2)}px) contrast(180%)`.trim(); } catch { /* ignore */ }
+    if (e.flipH || e.flipV) {
+      ctx.translate(e.flipH ? dx * 2 + dw : 0, e.flipV ? dy * 2 + dh : 0);
+      ctx.scale(e.flipH ? -1 : 1, e.flipV ? -1 : 1);
+    }
     ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
     ctx.restore();
   }
@@ -221,6 +306,8 @@ export function clipToNet(ctx: CanvasRenderingContext2D, net: Net) {
 
 export interface ArtOpts {
   clip?: boolean;
+  /** Keep image objects unclipped so no part of an image is cut off when adjusting on the artboard. */
+  unclipImages?: boolean;
   repaint?: () => void;
   /** draw a subtle paper grain */
   grain?: number;
@@ -244,6 +331,20 @@ export function drawArtwork(ctx: CanvasRenderingContext2D, design: Design, net: 
     ctx.fillStyle = fill;
     ctx.fillRect(p.x - 20, p.y - 20, p.w + 40, p.h + 40);
     ctx.restore();
+  }
+  if (opts.clip && opts.unclipImages) {
+    ctx.restore();
+    for (const o of design.objects) {
+      if (o.type === 'image') {
+        drawObject(ctx, o, opts.repaint);
+      } else {
+        ctx.save();
+        clipToNet(ctx, net);
+        drawObject(ctx, o, opts.repaint);
+        ctx.restore();
+      }
+    }
+    return;
   }
   for (const o of design.objects) drawObject(ctx, o, opts.repaint);
   ctx.restore();

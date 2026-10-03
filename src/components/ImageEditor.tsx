@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { defaultImageEdits, isPristine, type DesignObject, type ImageEdits } from '../lib/store';
 import { useStore } from '../lib/store';
-import { getImage, imageFilter } from '../lib/render2d';
+import { clampObjectToBounds, getImage, hostPanelFor, imageAspect, imageFilter } from '../lib/render2d';
 import { ColorIn, Field, Group, Icon, I, Segmented, Slider } from './ui';
 
 /* ------------------------------------------------------------------ *
@@ -52,22 +52,33 @@ function Preview({ o }: { o: DesignObject }) {
       ctx.fillRect(0, 0, W, H);
       return;
     }
-    const sx0 = img.naturalWidth * e.cropL;
-    const sy0 = img.naturalHeight * e.cropT;
-    const sw0 = Math.max(1, img.naturalWidth * (1 - e.cropL - e.cropR));
-    const sh0 = Math.max(1, img.naturalHeight * (1 - e.cropT - e.cropB));
-    const ir = sw0 / sh0, br = W / H;
-    let sx = sx0, sy = sy0, sw = sw0, sh = sh0;
-    if (ir > br) { sw = sh0 * br; sx = sx0 + (sw0 - sw) / 2; }
-    else { sh = sw0 / br; sy = sy0 + (sh0 - sh) / 2; }
+    const cl = Math.min(0.9, Math.max(0, e.cropL));
+    const cr = Math.min(0.9, Math.max(0, e.cropR));
+    const ct = Math.min(0.9, Math.max(0, e.cropT));
+    const cb = Math.min(0.9, Math.max(0, e.cropB));
+    const sx = img.naturalWidth * cl;
+    const sy = img.naturalHeight * ct;
+    const sw = Math.max(1, img.naturalWidth * (1 - cl - cr));
+    const sh = Math.max(1, img.naturalHeight * (1 - ct - cb));
+    const ir = sw / sh, br = W / H;
+    let dx = 0, dy = 0, dw = W, dh = H;
+    if (o.fit !== 'stretch') {
+      if (ir > br) { dh = W / ir; dy = (H - dh) / 2; }
+      else { dw = H * ir; dx = (W - dw) / 2; }
+    }
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(dx, dy, dw, dh);
+    ctx.clip();
 
     ctx.save();
     try { ctx.filter = imageFilter(e, 1); } catch { /* ignore */ }
     if (e.flipH || e.flipV) {
-      ctx.translate(e.flipH ? W : 0, e.flipV ? H : 0);
+      ctx.translate(e.flipH ? dx * 2 + dw : 0, e.flipV ? dy * 2 + dh : 0);
       ctx.scale(e.flipH ? -1 : 1, e.flipV ? -1 : 1);
     }
-    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
     ctx.restore();
 
     if (e.sharpen > 0) {
@@ -75,7 +86,11 @@ function Preview({ o }: { o: DesignObject }) {
       ctx.globalCompositeOperation = 'overlay';
       ctx.globalAlpha = Math.min(1, e.sharpen / 140);
       try { ctx.filter = 'blur(0.7px) contrast(180%)'; } catch { /* ignore */ }
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, W, H);
+      if (e.flipH || e.flipV) {
+        ctx.translate(e.flipH ? dx * 2 + dw : 0, e.flipV ? dy * 2 + dh : 0);
+        ctx.scale(e.flipH ? -1 : 1, e.flipV ? -1 : 1);
+      }
+      ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
       ctx.restore();
     }
     if (e.exposure !== 0) {
@@ -83,7 +98,7 @@ function Preview({ o }: { o: DesignObject }) {
       ctx.globalCompositeOperation = e.exposure > 0 ? 'screen' : 'multiply';
       ctx.globalAlpha = Math.min(0.85, Math.abs(e.exposure) / 130);
       ctx.fillStyle = e.exposure > 0 ? '#fff' : '#000';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(dx, dy, dw, dh);
       ctx.restore();
     }
     if (e.tintAmt > 0) {
@@ -91,17 +106,19 @@ function Preview({ o }: { o: DesignObject }) {
       ctx.globalCompositeOperation = 'color';
       ctx.globalAlpha = Math.min(1, e.tintAmt / 100);
       ctx.fillStyle = e.tint;
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(dx, dy, dw, dh);
       ctx.restore();
     }
     if (e.vignette > 0) {
-      const r = Math.hypot(W, H) / 2;
-      const g = ctx.createRadialGradient(W / 2, H / 2, r * 0.35, W / 2, H / 2, r);
+      const cx = dx + dw / 2, cy = dy + dh / 2;
+      const r = Math.hypot(dw, dh) / 2;
+      const g = ctx.createRadialGradient(cx, cy, r * 0.35, cx, cy, r);
       g.addColorStop(0, 'rgba(0,0,0,0)');
       g.addColorStop(1, `rgba(0,0,0,${Math.min(0.95, e.vignette / 100)})`);
       ctx.fillStyle = g;
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(dx, dy, dw, dh);
     }
+    ctx.restore();
   });
 
   return <canvas ref={ref} className="imgfx-preview" />;
@@ -109,16 +126,66 @@ function Preview({ o }: { o: DesignObject }) {
 
 export default function ImageEditor({ o }: { o: DesignObject }) {
   const update = useStore((s) => s.updateObject);
+  const net = useStore((s) => s.net);
   const [tab, setTab] = useState<Tab>('adjust');
   const [compare, setCompare] = useState(false);
 
   const e: ImageEdits = { ...defaultImageEdits(), ...o.img };
-  const set = (patch: Partial<ImageEdits>, key?: string) =>
-    update(o.id, { img: { ...e, ...patch } }, key);
+
+  const boundsForObject = () => {
+    const p = hostPanelFor(net, o.x, o.y, o.w, o.h);
+    const inPanel =
+      o.x >= p.x - 1 &&
+      o.y >= p.y - 1 &&
+      o.x + o.w <= p.x + p.w + 1 &&
+      o.y + o.h <= p.y + p.h + 1;
+    return inPanel ? p : net.bounds;
+  };
+
+  const syncFrame = (nextEdits: ImageEdits, nextRot = o.rot, nextFit?: DesignObject['fit']) => {
+    const fit: DesignObject['fit'] = nextFit ?? (o.fit === 'cover' ? 'contain' : o.fit);
+    const ar = fit === 'stretch' ? null : imageAspect({ src: o.src, img: nextEdits });
+    let w = o.w;
+    let h = o.h;
+    if (ar && ar > 0) {
+      const area = Math.max(4, o.w * o.h);
+      h = Math.max(2, Math.sqrt(area / ar));
+      w = Math.max(2, h * ar);
+    }
+    const cx = o.x + o.w / 2;
+    const cy = o.y + o.h / 2;
+    const clamped = clampObjectToBounds(
+      { x: cx - w / 2, y: cy - h / 2, w, h, rot: nextRot },
+      boundsForObject(),
+      ar,
+    );
+    return { ...clamped, rot: nextRot, fit, img: nextEdits };
+  };
+
+  const set = (patch: Partial<ImageEdits>, key?: string) => {
+    const nextEdits: ImageEdits = { ...e, ...patch };
+    const cropChanged =
+      patch.cropT !== undefined ||
+      patch.cropB !== undefined ||
+      patch.cropL !== undefined ||
+      patch.cropR !== undefined;
+    if (cropChanged) {
+      update(o.id, syncFrame(nextEdits), key);
+    } else {
+      update(
+        o.id,
+        { img: nextEdits, ...(o.fit === 'cover' ? { fit: 'contain' as const } : {}) },
+        key,
+      );
+    }
+  };
   const shown = compare ? { ...o, img: defaultImageEdits() } : o;
 
   const applyPreset = (p: Preset) =>
-    update(o.id, { img: { ...defaultImageEdits(), tint: e.tint, ...p.edits } });
+    update(o.id, {
+      img: { ...defaultImageEdits(), tint: e.tint, ...p.edits },
+      ...(o.fit === 'cover' ? { fit: 'contain' as const } : {}),
+    });
 
   return (
     <Group
@@ -137,7 +204,7 @@ export default function ImageEditor({ o }: { o: DesignObject }) {
             <Icon d={I.eye} size={12} />
           </button>
           <button className="mini" title="Reset all edits"
-            onClick={() => update(o.id, { img: defaultImageEdits() })}>
+            onClick={() => update(o.id, syncFrame(defaultImageEdits()))}>
             <Icon d={I.reset} size={12} />
           </button>
         </span>
@@ -205,23 +272,36 @@ export default function ImageEditor({ o }: { o: DesignObject }) {
           <Field label="Fit inside the frame">
             <Segmented value={o.fit}
               options={[{ v: 'cover', l: 'Cover' }, { v: 'contain', l: 'Contain' }, { v: 'stretch', l: 'Stretch' }]}
-              onChange={(v) => update(o.id, { fit: v as DesignObject['fit'] })} />
+              onChange={(v) => {
+                const nextFit = v as DesignObject['fit'];
+                update(o.id, syncFrame(e, o.rot, nextFit));
+              }} />
           </Field>
           <Slider label="Crop top" value={e.cropT * 100} min={0} max={80} step={1} unit="%"
-            onChange={(v) => set({ cropT: v / 100 }, 'fx-ct')} />
+            onChange={(v) => set({ cropT: Math.min(0.85 - e.cropB, v / 100) }, 'fx-ct')} />
           <Slider label="Crop bottom" value={e.cropB * 100} min={0} max={80} step={1} unit="%"
-            onChange={(v) => set({ cropB: v / 100 }, 'fx-cb')} />
+            onChange={(v) => set({ cropB: Math.min(0.85 - e.cropT, v / 100) }, 'fx-cb')} />
           <Slider label="Crop left" value={e.cropL * 100} min={0} max={80} step={1} unit="%"
-            onChange={(v) => set({ cropL: v / 100 }, 'fx-cl')} />
+            onChange={(v) => set({ cropL: Math.min(0.85 - e.cropR, v / 100) }, 'fx-cl')} />
           <Slider label="Crop right" value={e.cropR * 100} min={0} max={80} step={1} unit="%"
-            onChange={(v) => set({ cropR: v / 100 }, 'fx-cr')} />
+            onChange={(v) => set({ cropR: Math.min(0.85 - e.cropL, v / 100) }, 'fx-cr')} />
           <div className="row" style={{ marginTop: 8 }}>
             <button className={`ebtn${e.flipH ? ' on' : ''}`} onClick={() => set({ flipH: !e.flipH })}>Flip H</button>
             <button className={`ebtn${e.flipV ? ' on' : ''}`} onClick={() => set({ flipV: !e.flipV })}>Flip V</button>
           </div>
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="ebtn" onClick={() => update(o.id, { rot: ((o.rot - 90 + 540) % 360) - 180 })}>Rotate −90°</button>
-            <button className="ebtn" onClick={() => update(o.id, { rot: ((o.rot + 90 + 540) % 360) - 180 })}>Rotate +90°</button>
+            <button
+              className="ebtn"
+              onClick={() => update(o.id, syncFrame(e, ((o.rot - 90 + 540) % 360) - 180))}
+            >
+              Rotate −90°
+            </button>
+            <button
+              className="ebtn"
+              onClick={() => update(o.id, syncFrame(e, ((o.rot + 90 + 540) % 360) - 180))}
+            >
+              Rotate +90°
+            </button>
           </div>
           <div className="row" style={{ marginTop: 8 }}>
             <button className="ebtn" onClick={() => set({ cropT: 0, cropR: 0, cropB: 0, cropL: 0 })}>Clear crop</button>
