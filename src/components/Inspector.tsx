@@ -1,4 +1,5 @@
 import { useStore } from '../lib/store';
+import { clampObjectToBounds, fitBoxInRect, hostPanelFor, imageAspect } from '../lib/render2d';
 import { ColorIn, Field, Group, Icon, I, NumIn, Segmented, Slider } from './ui';
 import ImageEditor from './ImageEditor';
 
@@ -114,12 +115,106 @@ export default function Inspector({ open = false }: { open?: boolean }) {
             </span>
           }>
             <div className="grid2">
-              <NumIn label="X (mm)" value={o.x} step={0.5} onChange={(v) => update(o.id, { x: v })} />
-              <NumIn label="Y (mm)" value={o.y} step={0.5} onChange={(v) => update(o.id, { y: v })} />
-              <NumIn label="W (mm)" value={o.w} step={0.5} min={0.5} onChange={(v) => update(o.id, { w: v })} />
-              <NumIn label="H (mm)" value={o.h} step={0.5} min={0.5} onChange={(v) => update(o.id, { h: v })} />
+              <NumIn
+                label="X (mm)"
+                value={o.x}
+                step={0.5}
+                onChange={(v) => {
+                  if (o.type === 'image') {
+                    const c = clampObjectToBounds({ x: v, y: o.y, w: o.w, h: o.h, rot: o.rot }, net.bounds);
+                    update(o.id, { x: c.x, y: c.y });
+                  } else {
+                    update(o.id, { x: v });
+                  }
+                }}
+              />
+              <NumIn
+                label="Y (mm)"
+                value={o.y}
+                step={0.5}
+                onChange={(v) => {
+                  if (o.type === 'image') {
+                    const c = clampObjectToBounds({ x: o.x, y: v, w: o.w, h: o.h, rot: o.rot }, net.bounds);
+                    update(o.id, { x: c.x, y: c.y });
+                  } else {
+                    update(o.id, { y: v });
+                  }
+                }}
+              />
+              <NumIn
+                label="W (mm)"
+                value={o.w}
+                step={0.5}
+                min={0.5}
+                onChange={(v) => {
+                  if (o.type === 'image' && o.fit !== 'stretch') {
+                    const ar = imageAspect(o) ?? (o.w / Math.max(0.1, o.h));
+                    const nh = Math.max(0.5, v / ar);
+                    const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+                    const c = clampObjectToBounds(
+                      { x: cx - v / 2, y: cy - nh / 2, w: v, h: nh, rot: o.rot },
+                      net.bounds,
+                      ar,
+                    );
+                    update(o.id, { ...c, ...(o.fit === 'cover' ? { fit: 'contain' as const } : {}) });
+                  } else {
+                    update(o.id, { w: v });
+                  }
+                }}
+              />
+              <NumIn
+                label="H (mm)"
+                value={o.h}
+                step={0.5}
+                min={0.5}
+                onChange={(v) => {
+                  if (o.type === 'image' && o.fit !== 'stretch') {
+                    const ar = imageAspect(o) ?? (o.w / Math.max(0.1, o.h));
+                    const nw = Math.max(0.5, v * ar);
+                    const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
+                    const c = clampObjectToBounds(
+                      { x: cx - nw / 2, y: cy - v / 2, w: nw, h: v, rot: o.rot },
+                      net.bounds,
+                      ar,
+                    );
+                    update(o.id, { ...c, ...(o.fit === 'cover' ? { fit: 'contain' as const } : {}) });
+                  } else {
+                    update(o.id, { h: v });
+                  }
+                }}
+              />
             </div>
-            <Slider label="Rotation" value={o.rot} min={-180} max={180} step={1} unit="°" onChange={(v) => update(o.id, { rot: v }, 'rot')} />
+            <Slider
+              label="Rotation"
+              value={o.rot}
+              min={-180}
+              max={180}
+              step={1}
+              unit="°"
+              onChange={(v) => {
+                if (o.type === 'image') {
+                  const host = hostPanelFor(net, o.x, o.y, o.w, o.h);
+                  const inPanel =
+                    o.x >= host.x - 1 &&
+                    o.y >= host.y - 1 &&
+                    o.x + o.w <= host.x + host.w + 1 &&
+                    o.y + o.h <= host.y + host.h + 1;
+                  const ar = o.fit === 'stretch' ? null : (imageAspect(o) ?? (o.w / Math.max(0.1, o.h)));
+                  const c = clampObjectToBounds(
+                    { x: o.x, y: o.y, w: o.w, h: o.h, rot: v },
+                    inPanel ? host : net.bounds,
+                    ar,
+                  );
+                  update(
+                    o.id,
+                    { ...c, rot: v, ...(o.fit === 'cover' ? { fit: 'contain' as const } : {}) },
+                    'rot',
+                  );
+                } else {
+                  update(o.id, { rot: v }, 'rot');
+                }
+              }}
+            />
             <Slider label="Opacity" value={o.opacity} min={0} max={1} step={0.01} onChange={(v) => update(o.id, { opacity: v }, 'op')} />
             <div className="row">
               <button className="ebtn" onClick={() => reorder(o.id, 'front')}>Bring front</button>
@@ -129,14 +224,52 @@ export default function Inspector({ open = false }: { open?: boolean }) {
               <button
                 className="ebtn"
                 title="Rotate 90° counter-clockwise"
-                onClick={() => update(o.id, { rot: ((o.rot - 90 + 540) % 360) - 180 })}
+                onClick={() => {
+                  const nextRot = ((o.rot - 90 + 540) % 360) - 180;
+                  if (o.type === 'image') {
+                    const host = hostPanelFor(net, o.x, o.y, o.w, o.h);
+                    const inPanel =
+                      o.x >= host.x - 1 &&
+                      o.y >= host.y - 1 &&
+                      o.x + o.w <= host.x + host.w + 1 &&
+                      o.y + o.h <= host.y + host.h + 1;
+                    const ar = o.fit === 'stretch' ? null : (imageAspect(o) ?? (o.w / Math.max(0.1, o.h)));
+                    const c = clampObjectToBounds(
+                      { x: o.x, y: o.y, w: o.w, h: o.h, rot: nextRot },
+                      inPanel ? host : net.bounds,
+                      ar,
+                    );
+                    update(o.id, { ...c, rot: nextRot, ...(o.fit === 'cover' ? { fit: 'contain' as const } : {}) });
+                  } else {
+                    update(o.id, { rot: nextRot });
+                  }
+                }}
               >
                 Rotate −90°
               </button>
               <button
                 className="ebtn"
                 title="Rotate 90° clockwise"
-                onClick={() => update(o.id, { rot: ((o.rot + 90 + 540) % 360) - 180 })}
+                onClick={() => {
+                  const nextRot = ((o.rot + 90 + 540) % 360) - 180;
+                  if (o.type === 'image') {
+                    const host = hostPanelFor(net, o.x, o.y, o.w, o.h);
+                    const inPanel =
+                      o.x >= host.x - 1 &&
+                      o.y >= host.y - 1 &&
+                      o.x + o.w <= host.x + host.w + 1 &&
+                      o.y + o.h <= host.y + host.h + 1;
+                    const ar = o.fit === 'stretch' ? null : (imageAspect(o) ?? (o.w / Math.max(0.1, o.h)));
+                    const c = clampObjectToBounds(
+                      { x: o.x, y: o.y, w: o.w, h: o.h, rot: nextRot },
+                      inPanel ? host : net.bounds,
+                      ar,
+                    );
+                    update(o.id, { ...c, rot: nextRot, ...(o.fit === 'cover' ? { fit: 'contain' as const } : {}) });
+                  } else {
+                    update(o.id, { rot: nextRot });
+                  }
+                }}
               >
                 Rotate +90°
               </button>
@@ -151,8 +284,22 @@ export default function Inspector({ open = false }: { open?: boolean }) {
                     p.kind === 'panel' && cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h)
                     ?? net.byId['front'] ?? net.root;
                   const m = Math.min(host.w, host.h) * 0.08;
+                  const availW = host.w - m * 2;
+                  const availH = host.h - m * 2;
+                  if (o.type === 'image') {
+                    const ar = o.fit === 'stretch' ? availW / Math.max(1, availH) : (imageAspect(o) ?? (o.w / Math.max(0.1, o.h)));
+                    const fit = fitBoxInRect(availW, availH, ar, o.rot);
+                    update(o.id, {
+                      x: host.x + (host.w - fit.w) / 2,
+                      y: host.y + (host.h - fit.h) / 2,
+                      w: fit.w,
+                      h: fit.h,
+                      ...(o.fit === 'cover' ? { fit: 'contain' as const } : {}),
+                    });
+                    return;
+                  }
                   const patch: Record<string, number> = {
-                    x: host.x + m, y: host.y + m, w: host.w - m * 2, h: host.h - m * 2,
+                    x: host.x + m, y: host.y + m, w: availW, h: availH,
                   };
                   if (o.type === 'text' && o.h > 0) patch.size = Math.max(1, o.size * (patch.h / o.h));
                   update(o.id, patch);
@@ -219,7 +366,18 @@ export default function Inspector({ open = false }: { open?: boolean }) {
             <select className="inp" defaultValue="" onChange={(e) => {
               const p = net.byId[e.target.value];
               if (!p) return;
-              update(o.id, { x: p.x + (p.w - o.w) / 2, y: p.y + (p.h - o.h) / 2 });
+              if (o.type === 'image') {
+                const ar = o.fit === 'stretch' ? null : (imageAspect(o) ?? (o.w / Math.max(0.1, o.h)));
+                const m = Math.min(p.w, p.h) * 0.04;
+                const c = clampObjectToBounds(
+                  { x: p.x + (p.w - o.w) / 2, y: p.y + (p.h - o.h) / 2, w: o.w, h: o.h, rot: o.rot },
+                  { x: p.x + m, y: p.y + m, w: p.w - m * 2, h: p.h - m * 2 },
+                  ar,
+                );
+                update(o.id, { ...c, ...(o.fit === 'cover' ? { fit: 'contain' as const } : {}) });
+              } else {
+                update(o.id, { x: p.x + (p.w - o.w) / 2, y: p.y + (p.h - o.h) / 2 });
+              }
               e.target.value = '';
             }}>
               <option value="">Center on panel…</option>

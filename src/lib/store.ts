@@ -167,7 +167,7 @@ export const newObject = (type: ObjType, patch: Partial<DesignObject> = {}): Des
   stroke: 'none', strokeW: 0.5, radius: 0,
   text: 'Your brand', font: 'Inter, system-ui, sans-serif', size: 9, weight: 700,
   align: 'center', tracking: 0, lineHeight: 1.2,
-  src: '', fit: 'cover',
+  src: '', fit: 'contain',
   img: defaultImageEdits(),
   ...patch,
   ...(patch.img ? { img: { ...defaultImageEdits(), ...patch.img } } : {}),
@@ -233,6 +233,32 @@ export const useStore = create<Store>((set, get) => ({
       || prev.params.W !== next.params.W
       || prev.params.H !== next.params.H
       || prev.params.glue !== next.params.glue;
+    const nextNet = geometryChanged ? buildNet(next.boxType, next.params) : s.net;
+    if (geometryChanged && prev.boxType === next.boxType && prev.objects.length === next.objects.length) {
+      for (const o of next.objects) {
+        if (o.type !== 'image') continue;
+        const cx = o.x + o.w / 2;
+        const cy = o.y + o.h / 2;
+        const prevP = s.net.panels.find((p) => cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h);
+        const nextP = prevP ? nextNet.byId[prevP.id] : null;
+        if (prevP && nextP && prevP.w > 0 && prevP.h > 0) {
+          const rx = (cx - prevP.x) / prevP.w;
+          const ry = (cy - prevP.y) / prevP.h;
+          const ar = Math.max(0.05, o.w / Math.max(0.1, o.h));
+          const scale = Math.min(nextP.w / prevP.w, nextP.h / prevP.h);
+          let nw = Math.max(2, o.w * scale);
+          let nh = Math.max(2, nw / ar);
+          if (nw > nextP.w) { nw = nextP.w; nh = nw / ar; }
+          if (nh > nextP.h) { nh = nextP.h; nw = nh * ar; }
+          const ncx = Math.min(nextP.x + nextP.w - nw / 2, Math.max(nextP.x + nw / 2, nextP.x + rx * nextP.w));
+          const ncy = Math.min(nextP.y + nextP.h - nh / 2, Math.max(nextP.y + nh / 2, nextP.y + ry * nextP.h));
+          o.w = nw;
+          o.h = nh;
+          o.x = ncx - nw / 2;
+          o.y = ncy - nh / 2;
+        }
+      }
+    }
     const now = Date.now();
     let past = s.past;
     const canCoalesce = key && coalesce && coalesce.key === key && now - coalesce.t < 700;
@@ -242,7 +268,7 @@ export const useStore = create<Store>((set, get) => ({
       design: next,
       past,
       future: [],
-      net: geometryChanged ? buildNet(next.boxType, next.params) : s.net,
+      net: nextNet,
       dirty: s.dirty + 1,
     });
   },

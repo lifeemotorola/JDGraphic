@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '../lib/store';
-import { drawArtwork, drawDieline, hitTest, panelAt, pathPoly } from '../lib/render2d';
+import {
+  clampObjectToBounds,
+  drawArtwork,
+  drawDieline,
+  hitTest,
+  hostPanelFor,
+  imageAspect,
+  panelAt,
+  pathPoly,
+} from '../lib/render2d';
 import { panelPoly } from '../lib/geometry';
 import { Icon, I } from './ui';
 
@@ -101,7 +110,7 @@ export default function Dieline2D({ selectedPanel, onSelectPanel }: {
     ctx.fill();
     ctx.restore();
 
-    drawArtwork(ctx, design, net, { clip: true, repaint });
+    drawArtwork(ctx, design, net, { clip: true, unclipImages: true, repaint });
 
     // artwork that spills outside the die
     ctx.save();
@@ -263,12 +272,38 @@ export default function Dieline2D({ selectedPanel, onSelectPanel }: {
         }
       }
       guides.current = { v: gv.slice(0, 2), h: gh.slice(0, 2) };
-      update(o.id, { x: nx, y: ny }, 'move');
+      if (o.type === 'image') {
+        const clamped = clampObjectToBounds({ x: nx, y: ny, w: o.w, h: o.h, rot: o.rot }, net.bounds);
+        update(o.id, { x: clamped.x, y: clamped.y }, 'move');
+      } else {
+        update(o.id, { x: nx, y: ny }, 'move');
+      }
     } else if (md.m === 'rot') {
       const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
       let ang = (Math.atan2(p.y - cy, p.x - cx) * 180) / Math.PI + 90;
       if (e.shiftKey) ang = Math.round(ang / 15) * 15;
-      update(o.id, { rot: Math.round(ang * 10) / 10 }, 'rot');
+      const rot = Math.round(ang * 10) / 10;
+      if (o.type === 'image') {
+        const host = hostPanelFor(net, o.x, o.y, o.w, o.h);
+        const inPanel =
+          o.x >= host.x - 1 &&
+          o.y >= host.y - 1 &&
+          o.x + o.w <= host.x + host.w + 1 &&
+          o.y + o.h <= host.y + host.h + 1;
+        const ar = o.fit === 'stretch' ? null : (imageAspect(o, repaint) ?? (o.w / o.h));
+        const clamped = clampObjectToBounds(
+          { x: o.x, y: o.y, w: o.w, h: o.h, rot },
+          inPanel ? host : net.bounds,
+          ar,
+        );
+        update(
+          o.id,
+          { ...clamped, rot, ...(o.fit === 'cover' ? { fit: 'contain' as const } : {}) },
+          'rot',
+        );
+      } else {
+        update(o.id, { rot }, 'rot');
+      }
     } else if (md.m === 'resize') {
       const r = (o.rot * Math.PI) / 180;
       const ux = { x: Math.cos(r), y: Math.sin(r) };
@@ -292,19 +327,31 @@ export default function Dieline2D({ selectedPanel, onSelectPanel }: {
         nw = Math.max(2, (vx * ux.x + vy * ux.y) * sx);
         nh = Math.max(2, (vx * uy.x + vy * uy.y) * sy);
       }
-      if (e.altKey || o.type === 'image') {
-        // keep aspect ratio: edge drags scale uniformly around the centre,
-        // corner drags lock whichever axis drives the resize
-        const ar = o.w / o.h;
+      const lockImageAspect = o.type === 'image' && o.fit !== 'stretch';
+      const ar = lockImageAspect ? (imageAspect(o, repaint) ?? (o.w / o.h)) : (o.w / o.h);
+      if (e.altKey || lockImageAspect) {
+        // keep aspect ratio using the image's full uncropped ratio so no side is cut off
         if (edgeX) { nh = nw / ar; }
         else if (edgeY) { nw = nh * ar; }
-        else if (nw / nh > ar) nw = nh * ar; else nh = nw / ar;
+        else if (nw / nh > ar) nh = nw / ar; else nw = nh * ar;
       }
       // edge drags keep the opposite edge pinned; the centre formula below
       // already encodes that since the unused sign component is 0
       const ncx = fx + (ux.x * sx * nw + uy.x * sy * nh) / 2;
       const ncy = fy + (ux.y * sx * nw + uy.y * sy * nh) / 2;
       const patch: any = { w: nw, h: nh, x: ncx - nw / 2, y: ncy - nh / 2 };
+      if (o.type === 'image') {
+        const clamped = clampObjectToBounds(
+          { x: patch.x, y: patch.y, w: patch.w, h: patch.h, rot: o.rot },
+          net.bounds,
+          lockImageAspect ? ar : null,
+        );
+        patch.x = clamped.x;
+        patch.y = clamped.y;
+        patch.w = clamped.w;
+        patch.h = clamped.h;
+        if (o.fit === 'cover') patch.fit = 'contain';
+      }
       if (o.type === 'text') {
         const f = Math.max(nw / o.w, nh / o.h);
         patch.size = Math.max(1, o.size * f);

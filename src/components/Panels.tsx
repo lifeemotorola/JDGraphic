@@ -9,6 +9,7 @@ import {
 import { PALETTES, TEMPLATES, applyTemplate } from '../lib/templates';
 import { sanitizeDesign, templateDesign, templateSwatch, useLibrary } from '../lib/library';
 import { ART, artSrc } from '../lib/art';
+import { fitBoxInRect, getImage } from '../lib/render2d';
 import { QR_DEFAULTS, QR_STYLE_META, qrDataURL, type QRStyle } from '../lib/qr';
 import { ColorIn, Field, Group, Icon, I, NumIn, Segmented, Slider, Swatches } from './ui';
 import { NetThumb } from './Thumb';
@@ -307,14 +308,40 @@ function ArtLibrary({ place, add }: {
   place: (fw: number, fh: number) => { x: number; y: number; w: number; h: number };
   add: (o: DesignObject) => void;
 }) {
+  const update = useStore((s) => s.updateObject);
   return (
     <Group title="Photo art library" right={<span className="link-mini">{ART.length} curated shots</span>}>
       <div className="art-grid">
         {ART.map((a) => (
           <button key={a.id} title={`${a.name} · ${a.credit}`}
             onClick={() => {
-              const p = place(0.62, 0.5);
-              add(newObject('image', { src: artSrc(a.id), name: a.name.slice(0, 18), ...p, fit: 'cover' }));
+              const src = artSrc(a.id);
+              const box = place(0.72, 0.62);
+              const cx = box.x + box.w / 2;
+              const cy = box.y + box.h / 2;
+              const cached = getImage(src);
+              if (cached && cached.naturalWidth && cached.naturalHeight) {
+                const fit = fitBoxInRect(box.w, box.h, cached.naturalWidth / cached.naturalHeight);
+                add(newObject('image', {
+                  src,
+                  name: a.name.slice(0, 18),
+                  x: cx - fit.w / 2,
+                  y: cy - fit.h / 2,
+                  w: fit.w,
+                  h: fit.h,
+                  fit: 'contain',
+                }));
+              } else {
+                const obj = newObject('image', { src, name: a.name.slice(0, 18), ...box, fit: 'contain' });
+                add(obj);
+                getImage(src, () => {
+                  const loaded = getImage(src);
+                  if (loaded && loaded.naturalWidth && loaded.naturalHeight) {
+                    const fit = fitBoxInRect(box.w, box.h, loaded.naturalWidth / loaded.naturalHeight);
+                    update(obj.id, { x: cx - fit.w / 2, y: cy - fit.h / 2, w: fit.w, h: fit.h, fit: 'contain' });
+                  }
+                });
+              }
             }}>
             <img src={artSrc(a.id)} alt={a.name} loading="lazy" />
           </button>
@@ -352,12 +379,39 @@ export function DesignPanel({ selectedPanel }: { selectedPanel: string | null })
     if (!f) return;
     const r = new FileReader();
     r.onload = () => {
+      const src = String(r.result);
       const p = panel ?? net.byId['front'] ?? net.root;
-      const w = p.w * 0.6;
-      add(newObject('image', {
-        src: String(r.result), name: f.name.slice(0, 18),
-        x: p.x + (p.w - w) / 2, y: p.y + p.h * 0.16, w, h: w * 0.75,
-      }));
+      const availW = p.w * 0.72;
+      const availH = p.h * 0.62;
+      const cx = p.x + p.w / 2;
+      const cy = p.y + p.h / 2;
+      const im = new Image();
+      im.onload = () => {
+        const ar = im.naturalWidth && im.naturalHeight ? im.naturalWidth / im.naturalHeight : 4 / 3;
+        const fit = fitBoxInRect(availW, availH, ar);
+        add(newObject('image', {
+          src,
+          name: f.name.slice(0, 18),
+          x: cx - fit.w / 2,
+          y: cy - fit.h / 2,
+          w: fit.w,
+          h: fit.h,
+          fit: 'contain',
+        }));
+      };
+      im.onerror = () => {
+        const fit = fitBoxInRect(availW, availH, 4 / 3);
+        add(newObject('image', {
+          src,
+          name: f.name.slice(0, 18),
+          x: cx - fit.w / 2,
+          y: cy - fit.h / 2,
+          w: fit.w,
+          h: fit.h,
+          fit: 'contain',
+        }));
+      };
+      im.src = src;
     };
     r.readAsDataURL(f);
   };
